@@ -77,7 +77,23 @@ def backend() -> tuple[Any, Any, dict[str, Any]]:
     그러면 새 값으로 앱을 새로 만든다.
     """
     values = _secrets()
-    return _backend_for(_fingerprint(values), values)
+    return _backend_for(_fingerprint(values) + _code_version(), values)
+
+
+def _code_version() -> str:
+    """또박 코드의 지문. 코드를 고쳐 올리면 바뀐다.
+
+    **배포하고 재 보니:** DB 코드를 고쳐 올렸는데 속도가 그대로였다. 스트림릿은
+    바뀐 파일을 다시 읽지만, 캐시해 둔 앱은 **옛 코드로 만든 그대로** 남는다.
+    열쇠가 비밀값뿐이라 바뀐 게 없다고 본 것이다. 코드 지문을 열쇠에 더하면
+    올릴 때마다 새 코드로 앱을 다시 만든다.
+    """
+    package = Path(__file__).resolve().parent.parent
+    digest = hashlib.sha256()
+    for path in sorted(package.rglob("*.py")):
+        digest.update(path.relative_to(package).as_posix().encode("utf-8"))
+        digest.update(path.read_bytes())
+    return digest.hexdigest()[:16]
 
 
 @st.cache_resource(show_spinner=False, max_entries=2)
