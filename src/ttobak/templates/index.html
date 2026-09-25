@@ -1,0 +1,391 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#ffffff">
+  <title>또박 · 한글 자모 단어 맞히기</title>
+  <meta name="description" content="{{ og_description }}">
+
+  <!-- 카톡·트위터 링크 미리보기.
+       공유가 이 게임의 핵심이라 링크가 밋밋하게 뜨면 그만큼 덜 눌린다.
+       이미지는 반드시 **절대 주소**여야 한다 — 미리보기를 만드는 쪽은
+       우리 페이지 밖에서 이미지를 따로 받아 가므로 상대 경로를 못 푼다. -->
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="또박">
+  <meta property="og:title" content="{{ og_title }}">
+  <meta property="og:description" content="{{ og_description }}">
+  <meta property="og:url" content="{{ og_url }}">
+  <meta property="og:image" content="{{ og_image }}">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta name="twitter:card" content="summary_large_image">
+  <script>{{ bootstrap_script | safe }}</script>
+  <link rel="stylesheet" href="static/css/style.css?v={{ asset_version }}">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🟩</text></svg>">
+</head>
+<body>
+  <!-- 로딩 화면.
+       예쁘라고 두는 것이 아니다. 이게 없으면 서버 응답을 받기 전까지
+       본문이 **완전히 비어 있고**, 실패했을 때도 백지라 "느린 것" 과
+       "죽은 것" 이 구분되지 않는다. -->
+  <section id="loading" class="screen loading">
+    <div class="loading__tiles" aria-hidden="true">
+      <span class="loading__tile"></span>
+      <span class="loading__tile"></span>
+      <span class="loading__tile"></span>
+    </div>
+    <p class="loading__text">또박</p>
+    <div id="loading-failed" hidden>
+      <p id="loading-error" class="loading__error" role="alert"></p>
+      <button id="loading-retry" class="button button--primary" type="button">다시 시도</button>
+    </div>
+  </section>
+
+  <!-- 참가 화면: 닉네임을 정하기 전까지만 보인다. -->
+  <section id="join" class="screen" hidden>
+    <h1 class="join__title">또박</h1>
+    <p class="join__lead">한글 자모로 낱말을 맞히는 놀이. 닉네임을 정하면 오늘의 문제가 시작됩니다.</p>
+    <!-- 초대 링크로 들어온 사람에게만 나타난다. 어느 방에 초대받았는지 모른 채
+         닉네임부터 정하게 하면, 방이 여럿인 사람은 자기가 어디로 들어가는지
+         알 수 없다. 링크가 못 쓰는 것일 때도 여기에 적는다. -->
+    <p id="join-room" class="join__room" hidden></p>
+    <form id="join-form" class="join__form" autocomplete="off">
+      <input id="nickname" class="join__input" type="text" name="nickname"
+             maxlength="20" placeholder="닉네임" required aria-label="닉네임">
+      <!-- 임자가 있는 닉네임일 때만 나타난다. 처음부터 보여 주면 대부분의
+           사람이 "이게 뭐지" 하고 멈춘다 — 필요한 순간에만 있으면 된다. -->
+      <!-- 선택 입력. 순위표에 닉네임 옆에 붙어서, 서로 모르는 사람들끼리도
+           "아 저 사람이 그 사람" 이 된다. 안 적어도 그냥 넘어간다. -->
+      <input id="join-relation" class="join__input" type="text" name="relation"
+             maxlength="12" placeholder="방장과는 무슨 사이? (선택)"
+             aria-label="방장과의 사이" autocomplete="off">
+      <input id="join-recovery" class="join__input" type="text" name="recovery"
+             maxlength="20" placeholder="복구 코드 (예: A7K2-M9P-XQ)"
+             aria-label="복구 코드" autocomplete="off" hidden>
+      <button class="button button--primary" type="submit">시작하기</button>
+    </form>
+    <p id="join-error" class="join__error" role="alert" aria-live="polite"></p>
+  </section>
+
+  <!-- 게임 화면 -->
+  <section id="game" class="screen" hidden>
+    <header class="header">
+      <div class="header__side">
+        <button id="rooms-button" class="header__icon" type="button" aria-label="방">👥</button>
+        <button id="stats-button" class="header__icon" type="button" aria-label="내 전적">📊</button>
+      </div>
+      <h1 class="header__title">또박</h1>
+      <div class="header__side header__side--end">
+        <button id="menu-button" class="header__icon" type="button" aria-label="메뉴">⋯</button>
+      </div>
+    </header>
+
+    <main id="board-area" class="board-area">
+      <p id="board-meta" class="board-meta"></p>
+      <div id="board" class="board" role="grid" aria-label="게임판"></div>
+      <p id="hint-line" class="hint-line" aria-live="polite" hidden></p>
+      <p id="message" class="message" role="status" aria-live="polite"></p>
+    </main>
+
+    <footer class="footer">
+      <div id="keyboard" class="keyboard" role="group" aria-label="자모 키보드"></div>
+      <button id="hint" class="button button--hint" type="button" hidden>힌트 보기</button>
+      <button id="submit" class="button button--primary button--submit" type="button">제출하기</button>
+      <button id="next" class="button button--primary button--submit" type="button" hidden>다음 문제</button>
+    </footer>
+  </section>
+
+  <!-- 결과와 전적을 함께 보여 주는 시트 -->
+  <div id="sheet" class="sheet" hidden>
+    <div class="sheet__panel" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+      <button id="sheet-close" class="sheet__close" type="button" aria-label="닫기">✕</button>
+      <h2 id="sheet-title" class="sheet__title">내 전적</h2>
+      <div id="sheet-body" class="sheet__body"></div>
+      <div class="sheet__actions">
+        <button id="sheet-share" class="button button--share" type="button" hidden>결과 공유하기</button>
+        <button id="sheet-next" class="button button--primary" type="button" hidden>다음 문제 풀기</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 설정 창 -->
+  <div id="settings" class="sheet" hidden>
+    <div class="sheet__panel" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+      <button id="settings-close" class="sheet__close" type="button" aria-label="닫기">✕</button>
+      <h2 id="settings-title" class="sheet__title">설정</h2>
+
+      <!-- 가입할 때 안 적었어도 여기서 채울 수 있게 둔다. 처음 들어올 때는
+           빨리 시작하고 싶어서 선택 칸을 대개 건너뛴다. -->
+      <div class="setting setting--stack">
+        <div>
+          <div class="setting__name">방장과의 사이</div>
+          <div class="setting__desc">순위표에서 닉네임 옆에 붙습니다. 비워 두면 안 나와요.</div>
+        </div>
+        <input id="settings-relation" class="setting__input" type="text"
+               maxlength="12" placeholder="예: 대학 동기"
+               aria-label="방장과의 사이" autocomplete="off">
+      </div>
+
+      <div id="settings-hint-row" class="setting" hidden>
+        <div>
+          <div class="setting__name">힌트 사용</div>
+          <div class="setting__desc">세 번 틀리면 앞자리를 하나씩 열어 봅니다. 쓰면 공유 결과에 표시됩니다.</div>
+        </div>
+        <label class="switch">
+          <input id="settings-hints" type="checkbox">
+          <span class="switch__track" aria-hidden="true"></span>
+          <span class="switch__label">끔</span>
+        </label>
+      </div>
+
+      <div class="setting setting--stack">
+        <div>
+          <div class="setting__name">난이도</div>
+          <div class="setting__desc">올릴수록 밝혀진 단서를 더 많이 강제합니다. 보통 말고는 힌트를 못 써요.</div>
+        </div>
+        <div id="settings-difficulty" class="difficulty-grid" role="group" aria-label="난이도"></div>
+        <p id="difficulty-note" class="setting__desc"></p>
+      </div>
+
+      <div class="setting setting--stack">
+        <div>
+          <div class="setting__name">시도 횟수</div>
+          <div class="setting__desc">기회를 몇 번 줄지 정합니다. 다음 문제부터 적용돼요.</div>
+        </div>
+        <div id="settings-attempts" class="length-grid" role="group" aria-label="시도 횟수"></div>
+      </div>
+
+      <div class="setting setting--stack">
+        <div>
+          <div class="setting__name">문제 길이</div>
+          <div class="setting__desc">고른 길이만 나옵니다. 하나도 안 고르면 전부 나와요.</div>
+        </div>
+        <div id="settings-lengths" class="length-grid" role="group" aria-label="문제 길이"></div>
+      </div>
+
+      <div class="setting setting--stack">
+        <div>
+          <div class="setting__name">공유 테마</div>
+          <div class="setting__desc">결과를 공유할 때 격자를 무엇으로 그릴지 고릅니다.</div>
+        </div>
+        <div id="settings-themes" class="theme-grid" role="radiogroup" aria-label="공유 테마"></div>
+      </div>
+
+      <p id="settings-status" class="setting__status" role="status" aria-live="polite"></p>
+
+      <div class="sheet__actions">
+        <button id="settings-howto" class="button button--ghost" type="button">❓ 놀이법 다시 보기</button>
+        <button id="settings-resign" class="button button--ghost" type="button">🏳️ 이 문제 포기하기</button>
+        <button id="settings-recovery" class="button button--ghost" type="button">🔑 복구 코드 새로 만들기</button>
+        <button id="settings-support" class="button button--ghost" type="button" hidden>💛 운영비 보내기</button>
+        <button id="settings-rename" class="button button--ghost" type="button">닉네임 바꾸기</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 방 목록 / 만들기 / 참여 -->
+  <div id="rooms" class="sheet" hidden>
+    <div class="sheet__panel" role="dialog" aria-modal="true" aria-labelledby="rooms-title">
+      <button id="rooms-close" class="sheet__close" type="button" aria-label="닫기">✕</button>
+      <h2 id="rooms-title" class="sheet__title">👥 방</h2>
+      <p class="hint">친구들과 <strong>같은 문제</strong>를 풀고 겨뤄요 🏆<br>초대 링크만 보내면 끝!</p>
+
+      <div id="rooms-list" class="rooms__list"></div>
+
+      <div class="rooms__create">
+        <label for="room-name">새 방 만들기</label>
+        <!-- 왜 만드는지를 적어 준다. 전에는 입력칸만 있어서, 방이 뭘 해 주는지
+             모르는 사람은 그냥 지나쳤다. -->
+        <p class="hint">
+          방을 만들면 그 사람들과 <strong>매일 같은 문제</strong>를 풀어요.
+          누가 몇 번 만에 맞혔는지 순위가 나오고, 다 푼 사람끼리 한마디를
+          남길 수 있어요 💬<br>
+          만든 뒤 <strong>초대 링크</strong>를 보내면 바로 들어옵니다.
+        </p>
+        <form id="room-form" class="row">
+          <input type="text" id="room-name" maxlength="20" placeholder="예: 친구들방" autocomplete="off" enterkeyhint="done">
+          <button id="room-create" class="button button--primary button--inline" type="submit">만들기</button>
+        </form>
+      </div>
+      <p id="rooms-status" class="setting__status" role="status" aria-live="polite"></p>
+    </div>
+  </div>
+
+  <!-- 오늘의 문제: 순위표 + 댓글 -->
+  <div id="daily-sheet" class="sheet" hidden>
+    <div class="sheet__panel" role="dialog" aria-modal="true" aria-labelledby="daily-title">
+      <button id="daily-close" class="sheet__close" type="button" aria-label="닫기">✕</button>
+      <h2 id="daily-title" class="sheet__title">오늘의 문제</h2>
+      <p id="daily-summary" class="hint"></p>
+      <!-- 그날 문제가 여럿이라 어느 것을 보고 있는지 고를 수 있어야 한다. -->
+      <div id="daily-slots" class="difficulty-grid" role="group" aria-label="오늘의 문제 고르기"></div>
+      <button id="daily-share" class="button button--share" type="button" hidden>결과 공유하기</button>
+
+      <h3 class="sheet__subtitle">순위</h3>
+      <div id="daily-standings" class="standings"></div>
+
+      <h3 class="sheet__subtitle">한마디</h3>
+      <p id="comments-locked" class="warn" hidden>오늘 문제를 <strong>다</strong> 풀면 볼 수 있어요 🤫</p>
+      <div id="comments-list" class="comments"></div>
+      <form id="comments-form" class="row" hidden>
+        <input type="text" id="comment-body" maxlength="80" placeholder="와 이걸 푸네" autocomplete="off" enterkeyhint="send">
+        <button id="comment-send" class="button button--primary button--inline" type="submit">남기기</button>
+      </form>
+      <p id="comments-status" class="setting__status" role="status" aria-live="polite"></p>
+    </div>
+  </div>
+
+  <!-- 처음 들어온 사람에게 한 번만 뜨는 놀이법.
+       규칙을 글로만 적으면 안 읽는다. **실제 채점 결과를 그대로 그려서**
+       보여 준다 — 특히 같은 자모가 둘 다 노랑인 경우는 말로 설명하면
+       헷갈리는데, 격자를 보면 한 번에 이해된다. -->
+  <div id="howto" class="sheet" hidden>
+    <div class="sheet__panel" role="dialog" aria-modal="true" aria-labelledby="howto-title">
+      <h2 id="howto-title" class="sheet__title">🟩 또박 놀이법</h2>
+      <p class="hint">낱말을 <strong>자모로 쪼개서</strong> 맞혀요.<br>
+        "가방" 은 <span class="howto__jamo">ㄱ ㅏ ㅂ ㅏ ㅇ</span> 다섯 칸이에요.</p>
+
+      <h3 class="sheet__subtitle">색이 알려 주는 것</h3>
+      <div class="howto__ex">
+        <div class="howto__row" aria-label="정답 가방, 추측 과자">
+          <span class="tile tile--sm tile--correct">ㄱ</span>
+          <span class="tile tile--sm tile--absent">ㅗ</span>
+          <span class="tile tile--sm tile--present">ㅏ</span>
+          <span class="tile tile--sm tile--absent">ㅈ</span>
+          <span class="tile tile--sm tile--present">ㅏ</span>
+        </div>
+        <p class="howto__say">
+          정답이 <strong>가방</strong>일 때 <strong>과자</strong>를 넣으면 이렇게 돼요.
+        </p>
+        <ul class="rule-list">
+          <li><span class="rule-list__mark rule-list__mark--correct"></span>
+            <strong>ㄱ</strong> — 자리까지 맞음</li>
+          <li><span class="rule-list__mark rule-list__mark--present"></span>
+            <strong>ㅏ</strong> — 있긴 한데 자리가 다름</li>
+          <li><span class="rule-list__mark rule-list__mark--none"></span>
+            <strong>ㅗ ㅈ</strong> — 아예 없음</li>
+        </ul>
+      </div>
+
+      <h3 class="sheet__subtitle">노랑이 두 개면 두 개예요</h3>
+      <p class="hint">
+        위에서 <strong>ㅏ 가 두 칸 다 노랑</strong>이죠. 그건 정답에
+        <strong>ㅏ 가 두 개 있다</strong>는 뜻이에요.
+        하나만 있었다면 한 칸만 노랑이 됩니다.
+      </p>
+      <h3 class="sheet__subtitle">초록 하나에 노랑 하나여도 두 개예요</h3>
+      <p class="hint">
+        색은 <strong>자리</strong>를 말하고, 개수는 <strong>색이 붙은 칸 수</strong>가
+        말해요. 그래서 초록 하나 + 노랑 하나면 그 자모는 정답에 두 개예요.
+      </p>
+      <div class="howto__ex">
+        <div class="howto__row" aria-label="정답 강아지, 추측 고양이">
+          <span class="tile tile--sm tile--correct">ㄱ</span>
+          <span class="tile tile--sm tile--absent">ㅗ</span>
+          <span class="tile tile--sm tile--correct">ㅇ</span>
+          <span class="tile tile--sm tile--absent">ㅑ</span>
+          <span class="tile tile--sm tile--present">ㅇ</span>
+          <span class="tile tile--sm tile--absent">ㅇ</span>
+          <span class="tile tile--sm tile--correct">ㅣ</span>
+        </div>
+        <p class="howto__say">
+          정답이 <strong>강아지</strong>일 때 <strong>고양이</strong>를 넣은 판이에요.
+          <strong>ㅇ 을 세 칸 넣었는데</strong> 초록 하나, 노랑 하나, 회색 하나가
+          나왔죠.
+        </p>
+        <ul class="rule-list">
+          <li><span class="rule-list__mark rule-list__mark--correct"></span>
+            초록 <strong>ㅇ</strong> — 이 자리에 ㅇ 이 맞아요</li>
+          <li><span class="rule-list__mark rule-list__mark--present"></span>
+            노랑 <strong>ㅇ</strong> — ㅇ 이 <strong>하나 더</strong> 있는데 자리가 달라요</li>
+          <li><span class="rule-list__mark rule-list__mark--none"></span>
+            회색 <strong>ㅇ</strong> — <strong>거기까지</strong>. 세 개는 아니에요</li>
+        </ul>
+        <p class="howto__say">
+          즉 <strong>강아지</strong>(ㄱ ㅏ <strong>ㅇ</strong> <strong>ㅇ</strong> ㅏ ㅈ ㅣ)에
+          ㅇ 은 정확히 두 개. 색이 붙은 칸을 세면 몇 개인지 바로 나와요.
+        </p>
+      </div>
+
+      <h3 class="sheet__subtitle">그 밖에</h3>
+      <ul class="rule-list">
+        <li><span class="rule-list__mark rule-list__mark--none">💡</span>
+          세 번 틀리면 힌트를 쓸 수 있어요 (설정에서 켜야 해요)</li>
+        <li><span class="rule-list__mark rule-list__mark--none">👥</span>
+          방에 들어가면 친구들과 <strong>같은 문제</strong>를 풀어요</li>
+      </ul>
+
+      <div class="sheet__actions">
+        <button id="howto-ok" class="button button--primary" type="button">시작하기</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 난이도를 처음 고를 때 한 번만 뜨는 설명.
+       규칙을 모르고 올리면 "왜 자꾸 거부당하지" 가 된다.
+       내용은 서버가 준 규칙으로 채우므로 여기는 빈 껍데기다 — 규칙을 화면에
+       한 번 더 적어 두면 서버와 어긋났을 때 알아챌 방법이 없다. -->
+  <div id="hard-intro" class="sheet" hidden>
+    <div class="sheet__panel" role="dialog" aria-modal="true" aria-labelledby="hard-intro-title">
+      <h2 id="hard-intro-title" class="sheet__title"></h2>
+      <p class="hint">밝혀진 단서를 <strong>반드시 써야</strong> 합니다.</p>
+      <ul id="hard-intro-rules" class="rule-list"></ul>
+      <p class="hint">노란 자모의 <em>자리</em>는 안 정해도 돼요. 아직 모르니까요.</p>
+      <p id="hard-intro-badge" class="hint"></p>
+      <div class="sheet__actions">
+        <button id="hard-intro-ok" class="button button--primary" type="button">알겠어요</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 후원해 준 사람에게 보여 주는 감사 화면. 눌러서 닫는다. -->
+  <div id="thanks" class="thanks" hidden aria-live="polite">
+    <div class="thanks__box">
+      <div class="thanks__heart">💛</div>
+      <p class="thanks__title">고마워요!</p>
+      <p id="thanks-line" class="thanks__line"></p>
+    </div>
+  </div>
+
+  <!-- 복구 코드. 닉네임을 처음 차지했을 때와 새로 만들었을 때 뜬다.
+       **다시는 볼 수 없는 값**이라 닫기 버튼 하나로 끝내지 않고, 적었다는
+       확인을 받는다. -->
+  <div id="recovery" class="sheet" hidden>
+    <div class="sheet__panel" role="dialog" aria-modal="true" aria-labelledby="recovery-title">
+      <h2 id="recovery-title" class="sheet__title">🔑 복구 코드</h2>
+      <p class="hint">
+        <strong>이 닉네임은 이제 내 것</strong>이에요. 다른 사람이 같은 이름으로
+        못 들어옵니다.
+      </p>
+      <input id="recovery-code" class="recovery__code" type="text" readonly aria-label="복구 코드">
+      <button id="recovery-copy" class="button button--small" type="button">📋 복사</button>
+      <p class="warn">
+        휴대폰을 바꾸거나 브라우저 기록을 지우면 <strong>이 코드가 있어야</strong>
+        내 기록을 되찾을 수 있어요. 서버도 이 코드를 모르기 때문에 다시 알려드릴 수 없어요.
+      </p>
+      <p id="recovery-status" class="support__status" role="status" aria-live="polite"></p>
+      <div class="sheet__actions">
+        <button id="recovery-ok" class="button button--primary" type="button">적어 뒀어요</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 후원. 링크를 안 정했으면(support_url 이 비었으면) 열리지 않는다. -->
+  <div id="support" class="sheet" hidden>
+    <div class="sheet__panel" role="dialog" aria-modal="true" aria-labelledby="support-title">
+      <button id="support-close" class="sheet__close" type="button" aria-label="닫기">✕</button>
+      <h2 id="support-title" class="sheet__title">💛 운영비 보내기</h2>
+      <p class="support__intro">광고 없는 게임이에요. 서버 돌리는 값만 🙂</p>
+      <div id="support-providers" class="support__providers" role="radiogroup" aria-label="송금 수단"></div>
+      <div id="support-tiers" class="support__tiers"></div>
+      <p id="support-status" class="support__status" role="status" aria-live="polite"></p>
+      <p class="support__note">안 하셔도 다 똑같이 쓸 수 있어요</p>
+    </div>
+  </div>
+
+  <script src="static/js/hangul.js?v={{ asset_version }}"></script>
+  <script src="static/js/api.js?v={{ asset_version }}"></script>
+  <script src="static/js/app.js?v={{ asset_version }}"></script>
+</body>
+</html>

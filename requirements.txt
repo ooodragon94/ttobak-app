@@ -1,0 +1,18 @@
+# 스트림릿 클라우드가 설치하는 목록. 이 PC 에서 끝까지 돌려 본 판으로 고정한다.
+# (집 PC 판은 pyproject.toml 로 설치하므로 이 파일을 쓰지 않는다.)
+
+# 스트림릿 컴포넌트 v2(iframe 없이 페이지 안에서 도는 것)가 있어야 한다.
+streamlit==1.64.0
+# 기록을 Turso(원격 libSQL)에 둔다. 스트림릿 클라우드는 디스크가 남지 않는다.
+libsql==0.1.11
+
+# 또박 서버 자체 (pyproject.toml 의 dependencies 와 같다)
+fastapi==0.141.1
+jinja2>=3.1
+pydantic>=2.7
+pydantic-settings>=2.3
+itsdangerous>=2.2
+# 화면의 요청을 같은 프로세스의 FastAPI 앱에 전할 때 쓴다(TestClient).
+httpx==0.28.1
+# 리눅스 이미지에 시간대 자료가 없을 수 있다. 하루가 한국 시간으로 바뀌어야 한다.
+tzdata>=2024.1

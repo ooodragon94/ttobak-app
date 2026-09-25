@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+
+# 실행하며 생기는 것 (플레이어 DB, 로그, 백업)
+var/
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+
+# 비밀값. 저장소에는 절대 넣지 않는다.
+.env
+.env.*
+!.env.example
+.streamlit/secrets.toml
+*.key
+*.crt
+*.pem
+
+# 도구 캐시
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# OS
+Thumbs.db
+.DS_Store
