@@ -13,7 +13,7 @@ import sqlite3
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 __all__ = [
@@ -815,6 +815,56 @@ class Database:
                 (player_id, round_no),
             ).fetchone()
         return _to_game(row)
+
+    # --- 정리 ---
+
+    def prune(
+        self, *, today: date, keep_days: int, dormant_days: int
+    ) -> dict[str, int]:
+        """오래된 기록과 오래 안 들어온 계정을 지운다. 표마다 지운 줄 수를 준다.
+
+        **공짜 게임이라 많이 쌓아 두지 않는다**(사장님 방침). 판·댓글·처리 끝난
+        신고는 ``keep_days`` 일이 지나면 지운다. 전적과 연속 기록은 그만큼의
+        최근 기록으로만 셈해진다.
+
+        ``dormant_days`` 일 넘게 안 들어온 계정도 지운다. 그 사람의 판·댓글·방
+        참가는 외래 키(ON DELETE CASCADE)로 같이 사라진다. **방장은 지우지 않는다**
+        — 방장을 지우면 방이 통째로 사라지고, 그 방 사람들 기록까지 딸려 간다.
+
+        값이 0 이하면 그 정리는 하지 않는다.
+        """
+        now = datetime.now(UTC)
+
+        def stamp(days: int) -> str:
+            return (now - timedelta(days=days)).isoformat(timespec="seconds")
+
+        counts: dict[str, int] = {}
+        with self.connect() as connection:
+            if dormant_days > 0:
+                counts["players"] = connection.execute(
+                    "DELETE FROM players WHERE last_seen_at < ?"
+                    " AND id NOT IN (SELECT owner_id FROM rooms)",
+                    (stamp(dormant_days),),
+                ).rowcount
+            if keep_days > 0:
+                old_day = (today - timedelta(days=keep_days)).isoformat()
+                counts["games"] = connection.execute(
+                    "DELETE FROM games WHERE COALESCE(finished_at, started_at) < ?",
+                    (stamp(keep_days),),
+                ).rowcount
+                counts["daily_games"] = connection.execute(
+                    "DELETE FROM daily_games WHERE play_date < ?", (old_day,)
+                ).rowcount
+                counts["comments"] = connection.execute(
+                    "DELETE FROM comments WHERE play_date < ?", (old_day,)
+                ).rowcount
+                # 아직 판정 안 한 신고는 남긴다. 지우면 신고가 없던 일이 된다.
+                counts["word_reports"] = connection.execute(
+                    "DELETE FROM word_reports WHERE status != 'pending'"
+                    " AND COALESCE(reviewed_at, created_at) < ?",
+                    (stamp(keep_days),),
+                ).rowcount
+        return counts
 
     # --- 후원 ---
 

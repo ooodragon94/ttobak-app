@@ -17,12 +17,13 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.concurrency import run_in_threadpool
 
 from ttobak import __version__
 from ttobak.config import Settings, get_settings
 from ttobak.db import Database
 from ttobak.game import GameService
-from ttobak.web.deps import unsign_player_cookie
+from ttobak.web.deps import today, unsign_player_cookie
 from ttobak.web.routes.api import router as api_router
 from ttobak.web.routes.rooms import router as rooms_router
 from ttobak.web.security import (
@@ -65,6 +66,29 @@ BOOTSTRAP_SCRIPT_HASH = "sha256-" + base64.b64encode(
 logger = logging.getLogger(__name__)
 
 
+def _prune_if_new_day(app: FastAPI) -> None:
+    """오늘 아직 안 했으면 오래된 기록을 정리한다. 실패해도 게임은 계속 돈다."""
+    day = today()
+    if getattr(app.state, "pruned_on", None) == day:
+        return
+    # 먼저 적어 둔다. 여러 요청이 동시에 들어와도 한 번만 돌게 하고, 정리가
+    # 실패해도 그날 요청마다 다시 시도하느라 느려지지 않게 한다.
+    app.state.pruned_on = day
+    settings = app.state.settings
+    try:
+        counts = app.state.database.prune(
+            today=day,
+            keep_days=settings.retention_days,
+            dormant_days=settings.dormant_days,
+        )
+    except Exception:
+        logger.exception("오래된 기록 정리에 실패했다")
+        return
+    removed = {name: count for name, count in counts.items() if count}
+    if removed:
+        logger.info("오래된 기록 정리: %s", removed)
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     """설정을 받아 완성된 FastAPI 앱을 만든다."""
     settings = settings or get_settings()
@@ -87,6 +111,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             share_url=settings.share_url,
             hints_offered=settings.hints_offered,
         )
+        # 켜질 때 한 번 정리한다. 스트림릿 무료 배포는 잠들었다 깨며 자주 다시
+        # 켜지므로 대개 이것으로 충분하고, 오래 켜져 있으면 아래 미들웨어가
+        # 하루 한 번 더 한다.
+        _prune_if_new_day(app)
         logger.info(
             "또박 준비 완료: 사전 %s, DB %s, 공개=%s",
             {length: len(lexicon.for_length(length)) for length in lexicon.lengths},
@@ -122,6 +150,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         unsign=lambda raw: unsign_player_cookie(raw, settings),
     )
     app.add_middleware(BodySizeLimitMiddleware)
+
+    @app.middleware("http")
+    async def prune_daily(request: Request, call_next):
+        """**하루의 첫 요청**에서 오래된 기록을 정리한다.
+
+        예약 작업(cron)이 없는 곳(스트림릿 무료 배포)에서도 돌게 하려고 요청에
+        얹었다. 날짜만 비교하므로 평소 요청에는 비용이 거의 없다. 지우는 일은
+        스레드로 넘겨 다른 요청을 막지 않는다.
+        """
+        if getattr(app.state, "pruned_on", None) != today():
+            await run_in_threadpool(_prune_if_new_day, app)
+        return await call_next(request)
+
     # 압축은 가장 바깥에 둔다. 안쪽에서 무엇이 나오든(정적 파일, 템플릿,
     # 오류 화면) 마지막에 한 번만 줄이면 되기 때문이다.
     app.add_middleware(PublicGZipMiddleware)

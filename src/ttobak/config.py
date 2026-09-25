@@ -135,6 +135,21 @@ class Settings(BaseSettings):
         description="/docs 와 /openapi.json 을 열지 여부. 공개 배포에서는 끈다.",
     )
 
+    # --- 정리 ---
+    retention_days: int = Field(
+        default=30,
+        description=(
+            "판·댓글·처리 끝난 신고를 며칠까지 두는가. 지난 것은 하루 한 번 지운다. "
+            "0 이면 지우지 않는다."
+        ),
+    )
+    dormant_days: int = Field(
+        default=3,
+        description=(
+            "며칠 안 들어온 계정을 지우는가(방장은 제외). 0 이면 지우지 않는다."
+        ),
+    )
+
     # --- 공유 ---
     share_url: str = Field(
         default="",
