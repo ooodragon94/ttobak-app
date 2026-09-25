@@ -18,8 +18,28 @@ libSQL 은 SQLite 에서 갈라져 나온 것이라 SQL 문법이 같다. JSON �
 
 from __future__ import annotations
 
+import threading
+import time
 from collections.abc import Iterator, Sequence
 from typing import Any
+
+#: 원격 DB 에 쓴 시간의 누계. 느릴 때 "DB 가 느린가, 다른 게 느린가" 를 가르는
+#: 데 쓴다. 여러 사람의 요청이 동시에 더하므로 잠금을 건다.
+_stats_lock = threading.Lock()
+_stats = {"connects": 0, "connect_ms": 0.0, "queries": 0, "query_ms": 0.0}
+
+
+def _add(kind: str, started: float) -> None:
+    elapsed = (time.perf_counter() - started) * 1000
+    with _stats_lock:
+        _stats[kind + "s" if kind == "connect" else "queries"] += 1
+        _stats[kind + "_ms"] += elapsed
+
+
+def stats() -> dict[str, float]:
+    """지금까지의 누계를 복사해 준다. 앞뒤로 두 번 재서 빼면 그 사이 몫이 된다."""
+    with _stats_lock:
+        return dict(_stats)
 
 
 class Row:
@@ -95,7 +115,11 @@ class Connection:
         self._remote = remote
 
     def execute(self, sql: str, parameters: Sequence[Any] = ()) -> Cursor:
-        return Cursor(self._connection.execute(sql, tuple(parameters)))
+        started = time.perf_counter()
+        try:
+            return Cursor(self._connection.execute(sql, tuple(parameters)))
+        finally:
+            _add("query", started)
 
     def executemany(self, sql: str, rows: Any) -> Cursor:
         return Cursor(self._connection.executemany(sql, rows))
@@ -120,7 +144,11 @@ class Connection:
             self._connection.execute(statement)
 
     def commit(self) -> None:
-        self._connection.commit()
+        started = time.perf_counter()
+        try:
+            self._connection.commit()
+        finally:
+            _add("query", started)
 
     def rollback(self) -> None:
         self._connection.rollback()
@@ -180,7 +208,11 @@ def connect(
     """
     import libsql
 
-    if url:
-        raw = libsql.connect(url, auth_token=auth_token or "")
-        return Connection(raw, remote=True)
-    return Connection(libsql.connect(path))
+    started = time.perf_counter()
+    try:
+        if url:
+            raw = libsql.connect(url, auth_token=auth_token or "")
+            return Connection(raw, remote=True)
+        return Connection(libsql.connect(path))
+    finally:
+        _add("connect", started)

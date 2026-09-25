@@ -19,6 +19,7 @@ import json
 import logging
 import os
 import re
+import time
 from pathlib import Path
 from typing import Any
 
@@ -168,6 +169,9 @@ def _forward(client: TestClient, request: dict[str, Any]) -> dict[str, Any]:
     path = str(request.get("path", ""))
     if method not in ALLOWED_METHODS or not path.startswith("api/"):
         return {"id": rid, "status": 400, "payload": {"detail": "잘못된 요청입니다."}}
+    from ttobak.db import libsql_adapter
+
+    before, started = libsql_adapter.stats(), time.perf_counter()
     try:
         response = client.request(method, "/" + path, json=request.get("body"))
     except Exception:
@@ -180,7 +184,26 @@ def _forward(client: TestClient, request: dict[str, Any]) -> dict[str, Any]:
             payload = response.json()
         except ValueError:
             payload = None
-    return {"id": rid, "status": response.status_code, "payload": payload}
+    return {
+        "id": rid,
+        "status": response.status_code,
+        "payload": payload,
+        "timing": _timing(before, started),
+    }
+
+
+def _timing(before: dict[str, float], started: float) -> dict[str, float]:
+    """요청 하나에 걸린 시간과 그중 DB 몫. 화면이 모아 두었다가 보여 준다.
+
+    브라우저가 잰 왕복 시간에서 이 ``total_ms`` 를 빼면 스트림릿이 신호를 나르고
+    다시 그리는 데 쓴 시간이 나온다.
+    """
+    from ttobak.db import libsql_adapter
+
+    after = libsql_adapter.stats()
+    timing = {key: round(after[key] - before[key], 1) for key in after}
+    timing["total_ms"] = round((time.perf_counter() - started) * 1000, 1)
+    return timing
 
 
 def _component_value(name: str) -> Any:

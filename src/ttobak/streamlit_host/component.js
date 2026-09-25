@@ -96,7 +96,12 @@ function send(host, request, timeoutMs) {
         payload: { detail: "서버가 응답하지 않아요. 잠시 뒤 다시 시도해 주세요." },
       });
     }, timeoutMs);
-    host.pending.set(id, { resolve, timer, request: { id, ...request } });
+    host.pending.set(id, {
+      resolve,
+      timer,
+      request: { id, ...request },
+      sentAt: performance.now(),
+    });
     flush(host);
   });
 }
@@ -117,6 +122,24 @@ function flush(host) {
     token: storedToken(),
     nonce: host.nonce++,
   });
+}
+
+/**
+ * 요청마다 걸린 시간을 모아 둔다. 느릴 때 어디서 느린지 가르는 데 쓴다.
+ * 개발자 도구에서 `console.table(window.__ttobakTimings)` 로 본다.
+ *
+ * - roundtrip_ms: 화면이 보내고 답을 받기까지(브라우저가 잰 것)
+ * - total_ms: 그중 서버가 요청을 처리한 시간
+ * - connect_ms / query_ms: 그중 DB 에 붙고 질의한 시간
+ */
+function record(waiting, reply) {
+  const log = (window.__ttobakTimings ??= []);
+  log.push({
+    path: `${waiting.request.method || "GET"} ${waiting.request.path}`,
+    roundtrip_ms: Math.round(performance.now() - waiting.sentAt),
+    ...(reply.timing || {}),
+  });
+  if (log.length > 200) log.shift();
 }
 
 export default function (component) {
@@ -146,6 +169,7 @@ export default function (component) {
     if (!waiting) continue;
     host.pending.delete(reply.id);
     clearTimeout(waiting.timer);
+    record(waiting, reply);
     waiting.resolve(reply);
   }
 }
