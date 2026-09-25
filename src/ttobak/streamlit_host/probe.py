@@ -7,7 +7,6 @@ TCP 연결 한 번에 걸리는 시간이 곧 왕복 한 번이다. 다섯 번 �
 from __future__ import annotations
 
 import os
-import socket
 import threading
 import time
 from urllib.parse import urlparse
@@ -27,16 +26,27 @@ _lock = threading.Lock()
 
 
 def _rtt(host: str) -> float | str:
+    """연결을 한 번 열어 두고, 그 위로 요청을 몇 번 보내 가장 짧은 왕복을 잰다.
+
+    TCP 연결 시간만 재면 중간 장비(VPN 등)가 대신 받아서 전부 같게 나올 수
+    있다. 이미 열린 암호화 연결 위의 요청은 진짜 서버까지 다녀와야 한다.
+    """
+    import http.client
+
+    connection = http.client.HTTPSConnection(host, timeout=4)
     best = None
-    for _ in range(3):
-        started = time.perf_counter()
-        try:
-            with socket.create_connection((host, 443), timeout=2):
-                pass
-        except OSError as error:
-            return f"실패: {error}"
-        elapsed = (time.perf_counter() - started) * 1000
-        best = elapsed if best is None else min(best, elapsed)
+    try:
+        for attempt in range(4):
+            started = time.perf_counter()
+            connection.request("GET", "/", headers={"Connection": "keep-alive"})
+            connection.getresponse().read()
+            elapsed = (time.perf_counter() - started) * 1000
+            if attempt:  # 첫 번째는 연결을 여는 값이 섞인다
+                best = elapsed if best is None else min(best, elapsed)
+    except (OSError, http.client.HTTPException) as error:
+        return f"실패: {error}"[:80]
+    finally:
+        connection.close()
     return round(best, 1)
 
 
