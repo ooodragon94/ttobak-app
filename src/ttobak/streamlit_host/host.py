@@ -14,6 +14,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import os
 import re
@@ -44,35 +46,61 @@ REMEMBER = 64
 _COMPONENT_JS = (Path(__file__).with_name("component.js")).read_text(encoding="utf-8")
 
 
-def _load_secrets() -> None:
-    """스트림릿 비밀값(``st.secrets``) 중 ``TTOBAK_`` 로 시작하는 것을 환경 변수로.
+def _secrets() -> dict[str, str]:
+    """스트림릿 비밀값(``st.secrets``) 중 ``TTOBAK_`` 로 시작하는 것.
 
-    또박 설정은 환경 변수로 읽는다. 스트림릿 클라우드는 비밀값을 파일 대신
-    ``st.secrets`` 로 주므로 여기서 옮겨 준다. 이미 있는 환경 변수는 덮어쓰지
-    않는다 — 이 PC 에서 시험할 때 쓰는 값을 지키기 위해서다.
+    비밀값이 아예 없으면 스트림릿이 예외를 던진다. 그때는 빈 사전이다.
     """
     try:
         items = dict(st.secrets)
-    except Exception:  # 비밀값 파일이 아예 없으면 스트림릿이 예외를 던진다
-        return
-    for name, value in items.items():
-        if name.startswith("TTOBAK_") and name not in os.environ:
-            os.environ[name] = str(value)
+    except Exception:
+        return {}
+    return {k: str(v) for k, v in items.items() if k.startswith("TTOBAK_")}
 
 
-@st.cache_resource(show_spinner=False)
+def _fingerprint(values: dict[str, str]) -> str:
+    """비밀값 묶음의 지문. 값이 하나라도 바뀌면 지문이 바뀐다(값 자체는 안 남긴다)."""
+    blob = json.dumps(values, sort_keys=True, ensure_ascii=False).encode("utf-8")
+    return hashlib.sha256(blob).hexdigest()
+
+
 def backend() -> tuple[Any, Any, dict[str, Any]]:
-    """앱과 화면 조각을 **서버 전체에서 한 번만** 만든다.
+    """지금 비밀값에 맞는 앱을 돌려준다. 비밀값이 바뀌면 새로 만든다.
 
-    앱이 시작할 때 사전을 읽고 DB 를 준비한다. 사람마다 새로 하면 느리고
+    **처음 배포 때 실제로 터진 일**: 비밀값을 넣기 전에 앱이 한 번 켜져서,
+    Turso 주소 없이 임시 DB 로 앱이 만들어졌다. 그 뒤 비밀값을 넣었지만
+    스트림릿은 앱을 다시 켜지 않고 값만 바꿔 준다. 앱은 캐시돼 있었으므로 계속
+    임시 DB 를 썼다 — 친구들이 푼 기록이 Turso 에 하나도 안 들어갔다.
+
+    그래서 캐시 열쇠에 비밀값의 **지문**을 넣는다. 값이 바뀌면 지문이 바뀌고,
+    그러면 새 값으로 앱을 새로 만든다.
+    """
+    values = _secrets()
+    return _backend_for(_fingerprint(values), values)
+
+
+@st.cache_resource(show_spinner=False, max_entries=2)
+def _backend_for(
+    fingerprint: str, _values: dict[str, str]
+) -> tuple[Any, Any, dict[str, Any]]:
+    """앱과 화면 조각을 비밀값 묶음마다 **한 번만** 만든다.
+
+    앱이 시작할 때 사전을 읽고 DB 를 준비한다. 요청마다 새로 하면 느리고
     쓸데없으므로 캐시한다. 기동(lifespan)은 여기서 한 번 돌리고, 세션별
     클라이언트는 기동 없이 같은 앱을 부른다.
+
+    ``_values`` 앞의 밑줄은 스트림릿에게 "이건 캐시 열쇠로 쓰지 마라" 는 뜻이다.
+    열쇠는 ``fingerprint`` 하나로 충분하고, 비밀값을 캐시 열쇠에 두지 않는다.
     """
-    _load_secrets()
-    from ttobak.config import get_settings
+    # 비밀값이 환경 변수보다 이긴다. 스트림릿에서는 설정이 비밀값으로만 오고,
+    # 바뀐 값이 반영되어야 하기 때문이다.
+    os.environ.update(_values)
+    from ttobak.config import Settings
     from ttobak.web.app import create_app
 
-    settings = get_settings()
+    # get_settings() 는 프로세스 전체에서 한 번 만든 설정을 계속 돌려준다
+    # (캐시). 비밀값이 바뀌어도 옛 설정이 남으므로 여기서는 새로 읽는다.
+    settings = Settings()
     app = create_app(settings)
     boot = TestClient(app, base_url=BASE_URL)
     boot.__enter__()  # 기동을 돌리고 계속 열어 둔다
@@ -99,8 +127,14 @@ def _assets(client: TestClient) -> dict[str, Any]:
 
 
 def _client(app: Any) -> TestClient:
-    """이 세션(사람 한 명)의 클라이언트. 쿠키 통이 여기에 붙어 있다."""
+    """이 세션(사람 한 명)의 클라이언트. 쿠키 통이 여기에 붙어 있다.
+
+    비밀값이 바뀌어 앱이 새로 만들어졌으면, 옛 앱에 붙은 클라이언트는 버리고
+    새로 만든다. 쿠키(신원 열쇠)는 브라우저 저장소에서 다시 들어온다.
+    """
     client = st.session_state.get("ttobak_client")
+    if client is not None and st.session_state.get("ttobak_client_app") is not app:
+        client = None
     if client is None:
         client = TestClient(
             app,
@@ -111,6 +145,7 @@ def _client(app: Any) -> TestClient:
             headers=_client_headers(),
         )
         st.session_state.ttobak_client = client
+        st.session_state.ttobak_client_app = app
     return client
 
 
