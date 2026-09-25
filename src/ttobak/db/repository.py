@@ -7,9 +7,11 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import sqlite3
+import threading
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -279,7 +281,7 @@ class Database:
 
     - **sqlite3** (기본): 이 PC 에서 파일 하나로 돈다. 지금까지의 방식.
     - **libsql**: 스트림릿 배포용. 디스크가 남지 않는 곳이라 기록은 Turso(원격)에
-      두고, 로컬 파일은 읽기를 빠르게 하는 복제본으로만 쓴다.
+      둔다. 원격 커넥션은 열어 둔 채 돌려 쓴다(:meth:`_borrow`).
 
     고르는 것은 환경 변수다. ``TTOBAK_TURSO_URL`` 이 있으면 libsql 로 원격에
     붙고, ``TTOBAK_DB_DRIVER=libsql`` 이면 원격 없이 로컬 파일을 libsql 로 연다
@@ -292,6 +294,9 @@ class Database:
         self._turso_token = os.environ.get("TTOBAK_TURSO_TOKEN") or None
         driver = os.environ.get("TTOBAK_DB_DRIVER", "").strip().lower()
         self._use_libsql = bool(self._turso_url) or driver == "libsql"
+        # 쉬고 있는 원격 커넥션. 요청이 빌려 가고, 끝나면 돌려놓는다.
+        self._idle: list[sqlite3.Connection] = []
+        self._idle_lock = threading.Lock()
 
     @property
     def path(self) -> Path:
@@ -432,6 +437,9 @@ class Database:
     @contextmanager
     def connect(self) -> Iterator[sqlite3.Connection]:
         """커넥션을 열고 커밋/롤백까지 책임지는 컨텍스트 매니저."""
+        if self._turso_url:
+            yield from self._remote_unit()
+            return
         if self._use_libsql:
             from ttobak.db import libsql_adapter
 
@@ -458,6 +466,58 @@ class Database:
             raise
         finally:
             connection.close()
+
+    #: 쉬게 둘 원격 커넥션 수. 동시에 이보다 많이 필요하면 더 열고, 다 쓰면 닫는다.
+    POOL_MAX = 8
+
+    def _remote_unit(self) -> Iterator[sqlite3.Connection]:
+        """원격(Turso) 커넥션을 빌려 한 단위의 일을 하고 돌려놓는다.
+
+        **왜 돌려 쓰나 — 배포하고 재 보니:** 요청마다 커넥션을 새로 열었더니
+        오늘의 문제 하나 여는 데 7초가 걸렸다. 질의 43번 중 14번이 커넥션마다
+        하는 ``PRAGMA foreign_keys`` 였고, 새 커넥션의 첫 질의는 연결 준비까지
+        하느라 두세 배 느렸다. 원격에서는 질의 한 번이 곧 인터넷 왕복 한 번이다.
+
+        일이 **실패하면** 커넥션을 돌려놓지 않고 닫는다. 끊어진 커넥션이 섞여
+        들어가도 한 번 실패하고 나면 빠지므로, 다음 요청은 새로 연다.
+        """
+        connection = self._borrow()
+        finished = False
+        try:
+            yield connection
+            connection.commit()
+            finished = True
+        except BaseException:
+            # 끊어진 커넥션이면 되돌리기도 실패한다. 원래 오류를 올린다.
+            with contextlib.suppress(Exception):
+                connection.rollback()
+            raise
+        finally:
+            if finished:
+                self._give_back(connection)
+            else:
+                connection.close()
+
+    def _borrow(self) -> sqlite3.Connection:
+        with self._idle_lock:
+            if self._idle:
+                return self._idle.pop()
+        from ttobak.db import libsql_adapter
+
+        connection = libsql_adapter.connect(
+            str(self._path), url=self._turso_url, auth_token=self._turso_token
+        )
+        # Turso 는 처음부터 켜져 있지만(재 봤다), 기대는 대신 커넥션마다 한 번
+        # 확실히 켠다. 돌려 쓰므로 요청마다 드는 값이 아니다.
+        connection.execute("PRAGMA foreign_keys = ON")
+        return connection  # type: ignore[return-value]
+
+    def _give_back(self, connection: sqlite3.Connection) -> None:
+        with self._idle_lock:
+            if len(self._idle) < self.POOL_MAX:
+                self._idle.append(connection)
+                return
+        connection.close()
 
     # --- 플레이어 ---
 
