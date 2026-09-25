@@ -28,10 +28,10 @@ _lock = threading.Lock()
 
 def _rtt(host: str) -> float | str:
     best = None
-    for _ in range(5):
+    for _ in range(3):
         started = time.perf_counter()
         try:
-            with socket.create_connection((host, 443), timeout=5):
+            with socket.create_connection((host, 443), timeout=2):
                 pass
         except OSError as error:
             return f"실패: {error}"
@@ -41,12 +41,15 @@ def _rtt(host: str) -> float | str:
 
 
 def _run() -> None:
+    result["_시작"] = time.strftime("%H:%M:%S")
     targets = dict(REGIONS)
     turso = urlparse(os.environ.get("TTOBAK_TURSO_URL", "")).hostname
     if turso:
         targets["지금 Turso"] = turso
     for name, host in targets.items():
+        result[name] = "재는 중"
         result[name] = _rtt(host)
+    result["_끝"] = time.strftime("%H:%M:%S")
 
 
 def start() -> None:
