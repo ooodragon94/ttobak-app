@@ -163,6 +163,7 @@ export default function (component) {
   }
 
   if (data && "token" in data) rememberToken(data.token);
+  if (data && data.diag) window.__ttobakDiag = data.diag; // 임시: 지역 측정
 
   for (const reply of (data && data.replies) || []) {
     const waiting = host.pending.get(reply.id);

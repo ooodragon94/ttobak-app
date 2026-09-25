@@ -285,6 +285,13 @@ def main() -> None:
         # 화면을 아직 안 붙였을 때만 무거운 조각을 보낸다.
         data["assets"] = assets
 
+    # 임시: Turso 지역 고르기용 측정(probe.py). 고르고 나면 지운다.
+    from ttobak.streamlit_host import probe
+
+    probe.start()
+    if probe.result:
+        data["diag"] = dict(probe.result)
+
     _bridge(
         key=COMPONENT_KEY,
         data=data,
