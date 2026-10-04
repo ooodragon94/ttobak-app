@@ -521,6 +521,14 @@ class Database:
 
     # --- 플레이어 ---
 
+    def touch_player(self, player_id: str) -> None:
+        """마지막 접속 시각을 지금으로 바꾼다. 휴면 정리가 이 값을 본다."""
+        with self.connect() as connection:
+            connection.execute(
+                "UPDATE players SET last_seen_at = ? WHERE id = ?",
+                (_utcnow(), player_id),
+            )
+
     def upsert_player(
         self,
         player_id: str,

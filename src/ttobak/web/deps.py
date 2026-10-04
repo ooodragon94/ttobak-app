@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, Request, Response, status
@@ -217,7 +217,19 @@ def get_optional_player(
     player_id = _read_player_cookie(request, settings)
     if player_id is None:
         return None
-    return database.get_player(player_id)
+    player = database.get_player(player_id)
+    if player is not None and player.last_seen_at[:10] < _utc_today():
+        # **들어와 있는 사람의 마지막 접속도 갱신한다.** 예전에는 닉네임을
+        # 칠 때(참가)만 바뀌었다. 열쇠가 브라우저에 남아 있어 매일 그냥 들어와
+        # 푸는 사람은 한 번도 안 바뀌어서, 휴면 정리가 **매일 노는 사람을**
+        # 지울 뻔했다. 하루 한 번만 쓴다 — 요청마다 쓰면 원격 DB 왕복이 는다.
+        database.touch_player(player.id)
+    return player
+
+
+def _utc_today() -> str:
+    """오늘 날짜(UTC, YYYY-MM-DD). 저장된 시각과 같은 기준으로 비교한다."""
+    return datetime.now(UTC).date().isoformat()
 
 
 def get_current_player(

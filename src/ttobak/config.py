@@ -155,7 +155,7 @@ class Settings(BaseSettings):
         ),
     )
     dormant_days: int = Field(
-        default=3,
+        default=30,
         description=(
             "며칠 안 들어온 계정을 지우는가(방장은 제외). 0 이면 지우지 않는다."
         ),

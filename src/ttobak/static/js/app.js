@@ -344,9 +344,18 @@
 
     const gap = 6;
     const area = el.boardArea.getBoundingClientRect();
-    const meta = el.boardMeta?.getBoundingClientRect().height ?? 0;
-    // board-area 의 위아래 여백(8px씩)과 요소 사이 간격(10px)을 뺀다.
-    const usableHeight = area.height - meta - 36;
+    // 판 말고 같은 칸에 있는 것들(문제 정보, 힌트 줄, 안내 줄)의 높이를 **전부**
+    // 뺀다. 예전에는 문제 정보 줄만 뺐다. 그래서 힌트를 열면 힌트 줄만큼 판이
+    // 넘쳐서 **힌트가 키보드에 가렸다**(카톡 인앱 브라우저에서 실제로 그랬다).
+    const others = [...el.boardArea.children].filter(
+      (child) => child !== el.board && !child.hidden,
+    );
+    const othersHeight = others.reduce(
+      (sum, child) => sum + child.getBoundingClientRect().height,
+      0,
+    );
+    // board-area 의 위아래 여백(6px씩)과 요소 사이 간격(8px)도 뺀다.
+    const usableHeight = area.height - othersHeight - 8 * others.length - 12;
     const usableWidth = area.width - 24;
 
     const cols = game.length;

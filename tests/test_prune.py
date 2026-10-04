@@ -31,7 +31,7 @@ def seed(path) -> None:
     """방장 한 명, 활동 중인 사람 한 명, 오래 안 온 사람 한 명과 그들의 기록."""
     with sqlite3.connect(path) as db:
         db.execute("PRAGMA foreign_keys = ON")
-        people = [("owner", ago(40)), ("active", ago(1)), ("dormant", ago(10))]
+        people = [("owner", ago(40)), ("active", ago(1)), ("dormant", ago(40))]
         for pid, seen in people:
             db.execute(
                 "INSERT INTO players (id, display_name, created_at, last_seen_at)"
@@ -150,3 +150,21 @@ def test_앱이_켜질_때_정리한다(settings: Settings):
     }
     assert "dormant" not in ids
     assert count(settings.database_path, "SELECT COUNT(*) FROM games") == 1
+
+
+def test_들어와서_놀기만_해도_휴면이_아니다(settings: Settings):
+    """닉네임을 다시 안 쳐도(열쇠로 들어와도) 마지막 접속이 갱신돼야 한다.
+
+    안 그러면 처음 참가한 날로부터 정리 기간이 지나는 순간, 매일 노는
+    사람이 지워진다.
+    """
+    with TestClient(create_app(settings)) as client:
+        client.post("/api/join", json={"nickname": "매일"})
+        old = ago(40)
+        with sqlite3.connect(settings.database_path) as db:
+            db.execute("UPDATE players SET last_seen_at = ? WHERE id = '매일'", (old,))
+        assert client.get("/api/game").status_code == 200
+    with sqlite3.connect(settings.database_path) as db:
+        row = db.execute("SELECT last_seen_at FROM players WHERE id = '매일'")
+        seen = row.fetchone()[0]
+    assert seen > old
