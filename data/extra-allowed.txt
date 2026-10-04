@@ -79,3 +79,6 @@
 
 # --- 신고 반영 2026-09-21 (tools/review_reports.py) ---
 솥가마
+
+# --- 신고 반영 2026-10-05 (tools/review_reports.py) ---
+도륙

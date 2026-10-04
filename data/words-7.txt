@@ -96,3 +96,6 @@
 
 # --- 신고 반영 2026-09-18 (tools/review_reports.py) ---
 보조개
+
+# --- 신고 반영 2026-10-05 (tools/review_reports.py) ---
+정교수

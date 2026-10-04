@@ -38,10 +38,14 @@
 - 신고 내용이 자모가 아니면 모델에게 보여 주지도 않고 반려한다. 누가 신고
   칸에 문장을 밀어 넣어 판정을 조종하는 일을 막는다.
 
-넣은 것이 있으면 ``var/restart.flag`` 를 놓는다. 서버는 시작할 때만 사전을
-읽으므로, 5분 안에 감시 작업이 껐다 켜면서 반영된다. 하루 중간에 정답 목록이
-바뀌어도 이미 누가 연 오늘의 문제는 그 사람 것을 따르므로 방 안에서 어긋나지
-않는다.
+스트림릿 배포에서는 신고가 Turso 에 쌓인다. ``TTOBAK_TURSO_URL`` /
+``TTOBAK_TURSO_TOKEN`` 을 주고 돌리면 거기서 읽고 거기에 판정을 적는다. 사전을
+바꿨으면 커밋해서 올린다 — 스트림릿이 다시 배포하며 새 사전으로 앱을 만든다.
+하루 중간에 정답 목록이 바뀌어도 이미 누가 연 오늘의 문제는 그 사람 것을
+따르므로 방 안에서 어긋나지 않는다.
+
+표제어 목록(``data/korean-wordlist-raw.txt``)은 공개 저장소에 없다(출처 라이선스
+미확인). 로컬에 두고 쓴다.
 """
 
 from __future__ import annotations
@@ -58,7 +62,6 @@ sys.path.insert(0, str(ROOT / "src"))
 
 DATA = ROOT / "data"
 DEFAULT_DB = ROOT / "var" / "ttobak.sqlite3"
-FLAG = ROOT / "var" / "restart.flag"
 
 PROMPT = """너는 한국어 낱말 맞히기 게임의 신고함을 정리한다.
 게임에서 "사전에 없는 단어" 로 거절된 입력을
@@ -254,8 +257,7 @@ def main() -> int:
         database.resolve_word_report(report["id"], status, word, note)
 
     if changed:
-        FLAG.touch()
-        print("\n사전을 바꿨습니다. 재시작 깃발을 놓았으니 5분 안에 반영됩니다.")
+        print("\n사전을 바꿨습니다. 커밋해서 올리면 다시 배포되며 반영됩니다.")
     else:
         print("\n판정만 기록했습니다. 사전은 바뀌지 않았습니다.")
     return 0
