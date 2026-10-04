@@ -845,19 +845,42 @@
    * 둘 다 막힌 경우(권한 거부, 안전하지 않은 출처)를 대비해 마지막에는 글을
    * 화면에 펼쳐 전체 선택해 둔다. 사용자가 직접 긁어 갈 수 있다.
    */
+  /**
+   * 휴대폰의 공유 시트(카톡으로 보내기 등)를 연다. 열었거나 사용자가 닫았으면
+   * true, 열 수 없으면 false — 그때는 부르는 쪽이 복사로 넘어간다.
+   *
+   * **스트림릿 클라우드는 앱을 iframe 에 넣고 공유 권한(web-share)을 안 준다.**
+   * 그래서 이 틀 안의 navigator.share 는 있긴 한데 부르면 거절당한다. 바깥
+   * 페이지는 주소가 같아서(같은 출처) 그쪽 navigator 를 빌려 쓸 수 있고, 맨
+   * 바깥 페이지에는 그 권한이 있다. 바깥 것을 먼저, 안 되면 이 틀 것을 쓴다.
+   */
+  async function openShareSheet(text) {
+    const candidates = [];
+    try {
+      if (window.top !== window && window.top.navigator.share) {
+        candidates.push(window.top.navigator);
+      }
+    } catch {
+      // 바깥 페이지가 다른 주소면 건드릴 수 없다. 이 틀 것만 쓴다.
+    }
+    if (navigator.share) candidates.push(navigator);
+    for (const nav of candidates) {
+      try {
+        await nav.share({ text });
+        return true;
+      } catch (error) {
+        // 사용자가 공유 시트를 닫은 것이면 아무 일도 없었던 셈이다.
+        if (error?.name === "AbortError") return true;
+      }
+    }
+    return false;
+  }
+
   async function shareResult() {
     const text = state.game?.share_text;
     if (!text) return;
 
-    if (navigator.share) {
-      try {
-        await navigator.share({ text });
-        return;
-      } catch (error) {
-        // 사용자가 공유 시트를 닫은 것이면 아무 일도 없었던 셈이다.
-        if (error?.name === "AbortError") return;
-      }
-    }
+    if (await openShareSheet(text)) return;
 
     try {
       await navigator.clipboard.writeText(text);
@@ -1723,14 +1746,7 @@
   el.dailyShare.addEventListener("click", async () => {
     if (!dailyShareText) return;
     // 폰에서는 공유 시트를 띄운다. 카톡을 바로 고를 수 있어 한 단계가 준다.
-    if (navigator.share) {
-      try {
-        await navigator.share({ text: dailyShareText });
-        return;
-      } catch {
-        // 사용자가 취소했거나 막힌 경우. 복사로 넘어간다.
-      }
-    }
+    if (await openShareSheet(dailyShareText)) return;
     try {
       await navigator.clipboard.writeText(dailyShareText);
       el.dailyShare.textContent = "복사됐어요!";
