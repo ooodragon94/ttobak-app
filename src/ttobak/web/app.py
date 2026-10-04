@@ -206,6 +206,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "og_title": "또박 · 한글 자모 단어 맞히기",
                 "og_description": "친구들과 매일 같은 문제를 풀고 겨뤄요 🏆",
                 "og_url": base + "/",
+                # 초대 링크의 바탕. 정해 둔 공유 주소가 있을 때만 준다.
+                "share_url": (settings.share_url or "").rstrip("/"),
                 "og_image": f"{base}/static/og.png?v={asset_version}",
             },
             headers={"Cache-Control": "no-store, must-revalidate"},

@@ -1301,9 +1301,14 @@
   let dailyShareText = null;
 
   function roomLink(code) {
-    // 초대 링크. 현재 주소에 ?room= 만 붙인다 — 친구가 눌렀을 때 앱이 뜨고
+    // 초대 링크. 앱 주소에 ?room= 만 붙인다 — 친구가 눌렀을 때 앱이 뜨고
     // 자동으로 그 방에 들어가진다.
-    const base = location.origin + location.pathname;
+    //
+    // 공유 주소를 정해 뒀으면 그것을 쓴다. 스트림릿 클라우드는 앱을 안쪽
+    // 틀(/~/+/) 에 띄우므로 지금 주소를 그대로 쓰면 그 안쪽 주소가 나간다
+    // (실제로 그렇게 나간 초대 링크가 단톡방에 올라갔다).
+    const configured = document.getElementById("app-config")?.dataset.shareUrl;
+    const base = configured ? `${configured}/` : location.origin + location.pathname;
     return `${base}?room=${encodeURIComponent(code)}`;
   }
 

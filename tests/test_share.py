@@ -9,8 +9,11 @@ from __future__ import annotations
 from datetime import date
 
 import pytest
+from fastapi.testclient import TestClient
 
+from ttobak.config import Settings
 from ttobak.game.share import BADGES, build_share_text, tier_badge
+from ttobak.web.app import create_app
 
 WON_ROWS = [
     ["absent", "correct", "absent", "absent", "absent", "absent"],
@@ -173,3 +176,16 @@ def test_배지_표가_내림차순이다():
     thresholds = [threshold for threshold, _ in BADGES]
     assert thresholds == sorted(thresholds, reverse=True)
     assert thresholds[-1] == 0  # 0판도 배지를 받아야 한다
+
+
+def test_초대_링크_바탕은_정해_둔_공유_주소다(settings: Settings):
+    """스트림릿은 앱을 안쪽 틀(/~/+/)에 띄운다. 화면이 지금 주소로 초대 링크를
+    만들면 그 안쪽 주소가 나가므로, 정해 둔 공유 주소를 본문에 실어 준다."""
+    configured = settings.model_copy(update={"share_url": "https://ttobak.example/"})
+    with TestClient(create_app(configured)) as client:
+        page = client.get("/").text
+    assert 'id="app-config" data-share-url="https://ttobak.example"' in page
+
+    with TestClient(create_app(settings)) as client:
+        page = client.get("/").text
+    assert 'data-share-url=""' in page, "안 정했으면 비워서 지금 주소를 쓰게 한다"

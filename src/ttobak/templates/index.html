@@ -25,6 +25,9 @@
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🟩</text></svg>">
 </head>
 <body>
+  <!-- 화면이 알아야 하는 설정. 스트림릿에서는 본문만 옮겨 붙이므로 <head> 가
+       아니라 여기에 둔다. -->
+  <div id="app-config" data-share-url="{{ share_url }}" hidden></div>
   <!-- 로딩 화면.
        예쁘라고 두는 것이 아니다. 이게 없으면 서버 응답을 받기 전까지
        본문이 **완전히 비어 있고**, 실패했을 때도 백지라 "느린 것" 과
