@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import hmac
 import logging
 from dataclasses import asdict
 from datetime import date
@@ -117,6 +118,13 @@ def read_me(
     return MeResponse(suggested_nickname=suggestion)
 
 
+def _is_gm_code(given: str | None, expected: str) -> bool:
+    """GM 암호가 맞는가. 암호를 안 정했으면 누구도 못 맞힌다."""
+    if not expected or not given:
+        return False
+    return hmac.compare_digest(given.strip().encode(), expected.encode())
+
+
 @router.post("/join", response_model=MeResponse)
 def join(
     payload: JoinRequest,
@@ -146,6 +154,18 @@ def join(
     # 복구 코드가 없으면 거절한다.
     exists, stored_hash = database.recovery_hash_of(player_id)
     already_me = current_player_id(request, settings) == player_id
+
+    # --- GM 은 만든 사람만 ---
+    #
+    # 저장소 키(대소문자·공백·기호를 지운 것)로 보므로 "G M", "g.m", "Gm" 도
+    # 같이 막힌다. 이미 그 계정으로 들어와 있는 본인은 다시 묻지 않는다.
+    if "gm" in player_id and not already_me and not _is_gm_code(
+        payload.recovery_code, settings.gm_code
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="'GM' 이 들어간 닉네임은 쓸 수 없어요. 다른 이름을 써 주세요.",
+        )
     recovery_code: str | None = None
 
     # 임자가 있는 닉네임이면 코드가 맞아야 들어온다.
