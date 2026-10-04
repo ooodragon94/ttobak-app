@@ -58,3 +58,29 @@ def test_GM_이_없는_이름은_그대로(settings: Settings):
     with client_for(settings, gm_code=CODE) as client:
         response = client.post("/api/join", json={"nickname": "민수"})
     assert response.status_code == 200
+
+
+def test_태그에도_GM_은_못_단다(settings: Settings):
+    with client_for(settings, gm_code=CODE) as client:
+        joined = client.post("/api/join", json={"nickname": "민수", "relation": "G M"})
+        assert joined.status_code == 400
+        client.post("/api/join", json={"nickname": "민수", "relation": "친구"})
+        changed = client.put("/api/settings", json={"relation": "운영자gm"})
+        assert changed.status_code == 400
+        assert client.get("/api/settings").json()["relation"] == "친구"
+
+
+def test_GM_계정과_적어_둔_계정은_태그를_단다(settings: Settings):
+    with client_for(settings, gm_code=CODE, gm_players="태일") as client:
+        mine = client.post(
+            "/api/join", json={"nickname": "태일", "relation": "GM"}
+        )
+        assert mine.status_code == 200
+    with client_for(settings, gm_code=CODE) as client:
+        gm = client.post(
+            "/api/join",
+            json={"nickname": "GM태일", "recovery_code": CODE, "relation": "GM"},
+        )
+        assert gm.status_code == 200
+        tagged = client.put("/api/settings", json={"relation": "GM 이에요"})
+        assert tagged.status_code == 200

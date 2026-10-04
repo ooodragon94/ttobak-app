@@ -27,6 +27,8 @@ __all__ = [
     "SettingsDep",
     "DatabaseDep",
     "clean_nickname",
+    "may_wear_gm",
+    "mentions_gm",
     "clear_player_cookie",
     "get_app_settings",
     "is_secure_request",
@@ -63,6 +65,22 @@ def make_player_id(nickname: str) -> str:
     if not player_id:
         raise ValueError("닉네임에 한글이나 영문, 숫자가 하나 이상 있어야 합니다.")
     return player_id[:_NICKNAME_MAX]
+
+
+def mentions_gm(text: str) -> bool:
+    """글에 GM 이 들어 있나. 대소문자·공백·기호를 무시한다("G M", "g.m" 도 잡는다)."""
+    squeezed = _ID_ALLOWED.sub("", unicodedata.normalize("NFC", text).lower())
+    return "gm" in squeezed
+
+
+def may_wear_gm(player_id: str, settings: Settings) -> bool:
+    """이 계정이 GM 표시를 달아도 되나.
+
+    이름에 GM 이 들어간 계정은 GM 암호를 넣고 들어온 것이다(참가에서 막는다).
+    그 밖에는 설정에 적어 둔 계정만 된다.
+    """
+    allowed = {item.strip() for item in settings.gm_players.split(",") if item.strip()}
+    return "gm" in player_id or player_id in allowed
 
 
 def clean_nickname(nickname: str) -> str:

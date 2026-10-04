@@ -47,6 +47,8 @@ from ttobak.web.deps import (
     current_player_id,
     is_secure_request,
     make_player_id,
+    may_wear_gm,
+    mentions_gm,
     set_player_cookie,
     today,
 )
@@ -182,6 +184,14 @@ def join(
                 "이미 쓰고 있는 닉네임이에요. "
                 "본인이라면 복구 코드를 넣고, 아니면 다른 이름을 써 주세요."
             ),
+        )
+
+    # 태그(방장과의 사이)에도 GM 은 만든 사람만. 이름만 막으면 "철수 [GM]" 처럼
+    # 태그로 운영자 행세를 할 수 있다.
+    if mentions_gm(payload.relation) and not may_wear_gm(player_id, settings):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="'GM' 이 들어간 소개는 쓸 수 없어요.",
         )
 
     identity = None
@@ -390,6 +400,16 @@ def update_settings(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"이 서버가 내지 않는 길이입니다: {sorted(unknown)}",
             )
+
+    if (
+        payload.relation is not None
+        and mentions_gm(payload.relation)
+        and not may_wear_gm(player.id, settings)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="'GM' 이 들어간 소개는 쓸 수 없어요.",
+        )
 
     updated = database.update_preferences(
         player.id,

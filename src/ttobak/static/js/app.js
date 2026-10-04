@@ -1241,6 +1241,9 @@
       const settings = await Api.saveSettings({ relation: wanted });
       el.settingsRelation.value = settings.relation ?? "";
       setSettingsStatus(wanted ? "소개를 저장했습니다" : "소개를 지웠습니다");
+      // 순위표는 판을 열 때 받아 온 것이라 저장해도 그대로 남아 있었다.
+      // "바꿨는데 안 바뀐다" 가 됐다. 오늘의 문제를 보고 있으면 다시 받는다.
+      if (state.room) await refreshCurrentGame();
     } catch (error) {
       setSettingsStatus(error.message);
     } finally {
