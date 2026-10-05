@@ -19,6 +19,7 @@ import json
 import logging
 import os
 import re
+import sys
 import time
 from pathlib import Path
 from typing import Any
@@ -88,21 +89,10 @@ def _code_version() -> str:
     열쇠가 비밀값뿐이라 바뀐 게 없다고 본 것이다. 코드 지문을 열쇠에 더하면
     올릴 때마다 새 코드로 앱을 다시 만든다.
     """
-    package = Path(__file__).resolve().parent.parent
-    # 사전도 넣는다. 앱은 켜질 때 사전을 읽으므로, 신고를 정리해 사전만 고쳐
-    # 올리면 코드 지문은 그대로라 옛 사전으로 계속 돈다. 게임이 읽는 파일만
-    # 본다 — 로컬에만 있는 큰 원본(korean-wordlist-raw 등)까지 매번 읽을 필요는 없다.
-    data = package.parent.parent / "data"
-    files = sorted(package.rglob("*.py")) + sorted(
-        path
-        for pattern in ("words-*.txt", "allowed-?.txt", "extra-allowed.txt")
-        for path in data.glob(pattern)
-    )
-    digest = hashlib.sha256()
-    for path in files:
-        digest.update(path.name.encode("utf-8"))
-        digest.update(path.read_bytes())
-    return digest.hexdigest()[:16]
+    # 지문은 진입 파일(streamlit_app.py)이 잰다. 거기서 지문이 바뀌면 이 모듈까지
+    # 전부 새로 읽으므로, 같은 값을 여기서 또 재면 규칙이 두 벌이 된다. 사전과
+    # 화면 파일도 들어 있다 — 사전만 고쳐 올려도 새 사전으로 앱을 만든다.
+    return getattr(sys, "_ttobak_code_version", "")
 
 
 @st.cache_resource(show_spinner=False, max_entries=2)
