@@ -150,6 +150,9 @@ const Api = (() => {
         { method: "POST" },
       ),
     guess: (jamos) => request("api/game/guess", { method: "POST", body: { guess: jamos } }),
+    // 받아 줄 낱말 목록. 가진 판(version)을 보내면 안 바뀌었을 때 본문 없이 온다.
+    lexicon: (version) =>
+      request("api/lexicon" + (version ? `?v=${encodeURIComponent(version)}` : "")),
     stats: () => request("api/stats"),
     leaderboard: () => request("api/leaderboard"),
     settings: () => request("api/settings"),

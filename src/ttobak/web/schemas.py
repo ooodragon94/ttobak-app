@@ -116,6 +116,22 @@ class GameStateResponse(BaseModel):
     #: 이 판의 난이도 열쇠. 화면이 표시를 띄우는 데 쓴다.
     difficulty: str = Field(default="normal")
     hints_left: int = Field(default=0, description="더 받을 수 있는 힌트 수")
+    #: 진행 중인 판의 정답을 감춘 것(game/sealed.py). 화면이 바로 채점하는 데
+    #: 쓴다. 끝난 판에는 없다.
+    sealed: dict[str, str] | None = Field(default=None)
+
+
+class LexiconResponse(BaseModel):
+    """추측으로 받아 줄 자모 나열 전부. 화면이 "사전에 없는 단어" 를 바로 알린다.
+
+    화면은 받은 것을 브라우저에 두고 ``version`` 을 다시 보낸다. 같으면
+    ``unchanged`` 만 돌려줘 수백 KB 를 또 보내지 않는다.
+    """
+
+    version: str
+    unchanged: bool = False
+    #: 자모 수 → 그 길이의 자모 나열들(공백으로 이음). 바뀌지 않았으면 비어 있다.
+    keys: dict[str, str] = Field(default_factory=dict)
 
 
 class LeaderboardRow(BaseModel):
@@ -365,6 +381,9 @@ class DailyStateResponse(BaseModel):
     #: 링크에 방 코드가 실려 있어 받은 사람이 같은 방으로 바로 들어온다.
     #: 그게 이 기능의 목적이다 — 같은 문제를 푼 사람끼리 비교하는 것.
     share_text: str | None = Field(default=None)
+    #: 진행 중인 판의 정답을 감춘 것(game/sealed.py). 화면이 바로 채점하는 데
+    #: 쓴다. 끝난 판에는 없다.
+    sealed: dict[str, str] | None = Field(default=None)
 
 
 class DailyGuessRequest(BaseModel):

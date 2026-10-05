@@ -529,6 +529,173 @@
     renderBoard();
   }
 
+  /* ---------------- 그 자리에서 채점하기 ----------------
+   *
+   * **왜:** 원격 DB 로 옮긴 뒤 답을 낼 때마다 서버까지 다녀오느라 1초 안팎을
+   * 기다렸다. 그동안 화면은 멈춰 있다. 이제는 서버가 판에 실어 준 **감춘 정답**
+   * (sealed)과 미리 받아 둔 **사전 목록**으로 여기서 바로 채점해 타일을 뒤집고,
+   * 저장은 그 뒤에서 한다(낙관적 갱신).
+   *
+   * **최종 판정은 서버다.** 서버가 거절하면(동시에 다른 기기에서 쳤다든가)
+   * 칠한 줄을 되돌리고, 서버 색이 다르면 서버 쪽으로 다시 그린다.
+   *
+   * **못 할 때는 하지 않는다.** 사전을 아직 못 받았거나, 감춘 정답이 없거나,
+   * 하드 계열 난이도(단서 강제 규칙은 서버에만 있다)면 예전처럼 서버에 묻는다.
+   * 빠른 길이 막혀도 느린 길로는 반드시 간다.
+   */
+  const LEXICON_KEY = "ttobak.lexicon";
+  let lexicon = null; // 자모 수 → Set(자모 나열)
+
+  /** 사전 목록을 받는다. 브라우저에 판(version)째로 두고, 같으면 다시 안 받는다. */
+  async function loadLexicon() {
+    let cached = null;
+    try {
+      cached = JSON.parse(localStorage.getItem(LEXICON_KEY) || "null");
+    } catch {
+      cached = null; // 저장소가 막힌 브라우저. 매번 받으면 된다.
+    }
+    try {
+      const data = await Api.lexicon(cached?.version);
+      const keys = data.unchanged && cached ? cached.keys : data.keys;
+      if (!data.unchanged) {
+        try {
+          localStorage.setItem(LEXICON_KEY, JSON.stringify({ version: data.version, keys }));
+        } catch {
+          // 저장 공간이 모자라도 이번 방문에는 메모리로 쓴다.
+        }
+      }
+      lexicon = Object.fromEntries(
+        Object.entries(keys).map(([length, text]) => [length, new Set(text.split(" "))]),
+      );
+    } catch {
+      lexicon = null; // 못 받으면 서버가 판정한다. 게임은 그대로 돈다.
+    }
+  }
+
+  /** 감춘 정답을 푼다(game/sealed.py 의 거꾸로). 못 풀면 null. */
+  function unseal(sealed) {
+    if (!sealed) return null;
+    try {
+      const key = Uint8Array.from(atob(sealed.k), (c) => c.charCodeAt(0));
+      const bytes = Uint8Array.from(
+        atob(sealed.v),
+        (c, i) => c.charCodeAt(0) ^ key[i % key.length],
+      );
+      return new TextDecoder().decode(bytes);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * 칸별 채점. **서버의 rules.py score_guess 와 똑같아야 한다.**
+   * 1) 자리까지 맞은 칸을 초록으로 확정하고 그만큼 정답 재고를 뺀다.
+   * 2) 남은 칸을 왼쪽부터, 재고가 남은 자모에만 노랑.
+   */
+  function scoreGuess(guess, answer) {
+    const marks = guess.map(() => "absent");
+    const left = {};
+    guess.forEach((jamo, i) => {
+      if (jamo === answer[i]) marks[i] = "correct";
+      else left[answer[i]] = (left[answer[i]] ?? 0) + 1;
+    });
+    guess.forEach((jamo, i) => {
+      if (marks[i] === "correct") return;
+      if ((left[jamo] ?? 0) > 0) {
+        marks[i] = "present";
+        left[jamo] -= 1;
+      }
+    });
+    return marks;
+  }
+
+  const MARK_RANK = { absent: 0, present: 1, correct: 2 };
+
+  /** 키보드 색 합치기. 좋은 결과가 나쁜 결과를 덮는다(rules.py keyboard_state). */
+  function mergeKeyboard(keyboard, guess, marks) {
+    const next = { ...keyboard };
+    guess.forEach((jamo, i) => {
+      const now = next[jamo];
+      if (now === undefined || MARK_RANK[marks[i]] > MARK_RANK[now]) next[jamo] = marks[i];
+    });
+    return next;
+  }
+
+  /**
+   * 여기서 채점할 수 있으면 결과를, 없으면 null(서버에 맡김).
+   * 결과는 {rejected:true} 이거나 {marks, won}.
+   */
+  function judgeHere(game, draft) {
+    if (!lexicon || !game?.sealed) return null;
+    if (game.difficulty && game.difficulty !== "normal") return null;
+    const answer = unseal(game.sealed);
+    if (!answer || [...answer].length !== draft.length) return null;
+    const known = lexicon[String(draft.length)];
+    if (!known) return null;
+    const guess = draft.join("");
+    // 정답은 사전과 상관없이 받는다(서버와 같은 규칙 — service.py _validate).
+    if (guess !== answer && !known.has(guess)) return { rejected: true };
+    return { marks: scoreGuess(draft, [...answer]), won: guess === answer };
+  }
+
+  /** 여기서 채점한 줄을 판에 얹는다. 정답·공유 문구 같은 건 서버 답에서 채운다. */
+  function withLocalRow(game, draft, judged) {
+    const rows = [...game.rows, { jamos: [...draft], marks: judged.marks, word: "" }];
+    let status = "playing";
+    if (judged.won) status = "won";
+    else if (rows.length >= game.max_attempts) status = "lost";
+    return { ...game, rows, status, keyboard: mergeKeyboard(game.keyboard ?? {}, draft, judged.marks) };
+  }
+
+  const sameBoard = (a, b) =>
+    a.status === b.status &&
+    a.rows.length === b.rows.length &&
+    a.rows.every((row, i) => row.marks.join() === b.rows[i].marks.join());
+
+  /** 그 자리에서 칠하고, 서버 답은 연출이 도는 동안 기다린다. */
+  async function submitHere(judged) {
+    const before = state.game;
+    const draft = [...state.draft];
+    const answer = draft.join("");
+    const room = state.room;
+    const startedAt = performance.now();
+    // 저장 요청을 **먼저** 띄운다. 기다림이 타일 연출 뒤로 숨는다.
+    const saving = room
+      ? Api.dailyGuess(room, answer, before?.slot ?? 0).then(asBoard)
+      : Api.guess(answer);
+
+    state.game = withLocalRow(before, draft, judged);
+    state.draft = [];
+    render();
+    animateLastRow();
+    if (state.game.status === "won") animateWin();
+    else if (state.game.status === "lost") animateLose();
+
+    try {
+      const view = await saving;
+      const local = state.game;
+      state.game = view;
+      // 서버가 다르게 봤으면 서버 쪽으로 다시 그린다. 같으면 판은 그대로 두고
+      // 숫자·버튼만 고친다 — 다시 그리면 돌고 있는 연출이 끊긴다.
+      if (!sameBoard(local, view)) render();
+      else renderMeta();
+      const word = view.rows.at(-1)?.word;
+      if (word) showMessage(word);
+      if (view.status === "won" || view.status === "lost") {
+        const reveal = view.length * 90 + (view.status === "won" ? 1200 : 1000);
+        setTimeout(openSheet, Math.max(0, reveal - (performance.now() - startedAt)));
+      }
+    } catch (error) {
+      // 서버가 안 받았다. 칠한 줄을 거두고 친 글자를 돌려준다.
+      state.game = before;
+      state.draft = draft;
+      render();
+      shakeActiveRow();
+      if (error.code === "unknown_word") showRejection(answer);
+      else showMessage(error.message, true);
+    }
+  }
+
   async function submitDraft() {
     if (state.locked) return;
     if (state.game?.status !== "playing") {
@@ -538,6 +705,25 @@
     if (state.draft.length !== state.game.length) {
       shakeActiveRow();
       showMessage(`자모 ${state.game.length}개를 채워 주세요.`, true);
+      return;
+    }
+
+    const judged = judgeHere(state.game, state.draft);
+    if (judged?.rejected) {
+      // 사전에 없는 말은 서버에 안 묻고 바로 알린다. 서버도 같은 목록이다.
+      shakeActiveRow();
+      showRejection(state.draft.join(""));
+      return;
+    }
+    if (judged) {
+      state.locked = true;
+      el.submit.disabled = true;
+      try {
+        await submitHere(judged);
+      } finally {
+        state.locked = false;
+        renderMeta();
+      }
       return;
     }
 
@@ -2433,6 +2619,8 @@
   // 스스로 다시 물어보므로 여기서는 링크 처리를 먼저 건다.
   joinFromLink().finally(loadSupport);
   start();
+  // 기다리지 않는다. 받기 전에 친 답은 예전처럼 서버가 채점한다.
+  loadLexicon();
   // 웹뷰가 통째로 새로 로드된 경우를 잡는다. 카톡이 카카오페이를
   // 열고 돌아올 때가 정확히 그 경우다.
   celebrateIfReturned();

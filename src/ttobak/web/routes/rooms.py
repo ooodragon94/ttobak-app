@@ -38,6 +38,7 @@ from ttobak.game.rooms import (
 )
 from ttobak.game.rounds import DAILY_SLOTS, daily_lengths, puzzle_for_day
 from ttobak.game.rules import Mark, score_guess
+from ttobak.game.sealed import seal
 from ttobak.game.service import HINT_AFTER_ATTEMPTS, InvalidGuessError
 from ttobak.game.share import build_daily_share_text
 from ttobak.hangul import decompose
@@ -402,6 +403,7 @@ def _daily_state(
         keyboard=keyboard,
         # 끝난 뒤에만 정답을 준다.
         answer=record.answer if record.is_finished else None,
+        sealed=None if record.is_finished else seal("".join(answer_jamos)),
         standings=[
             StandingRow(
                 display_name=s.display_name,

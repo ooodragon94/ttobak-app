@@ -26,7 +26,9 @@
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
+from functools import cached_property
 from pathlib import Path
 
 from ttobak.hangul import decompose, jamo_key
@@ -172,6 +174,22 @@ class Lexicon:
         손이 더 가지만, 없는 말을 통과시키는 것보다 낫다.
         """
         return self.for_length(length).contains(jamos)
+
+    @cached_property
+    def version(self) -> str:
+        """허용 목록 전체의 지문. 화면이 가진 목록이 옛것인지 가르는 데 쓴다."""
+        digest = hashlib.sha256()
+        for length, keys in self.allowed_keys_text().items():
+            digest.update(length.encode())
+            digest.update(keys.encode())
+        return digest.hexdigest()[:16]
+
+    def allowed_keys_text(self) -> dict[str, str]:
+        """자모 수 → 받아 줄 자모 나열들(공백으로 이음). 화면에 내려보낼 모양."""
+        return {
+            str(length): " ".join(sorted(self.by_length[length].allowed_keys))
+            for length in self.lengths
+        }
 
     def for_length(self, length: int) -> WordList:
         """``length`` 자모 사전을 돌려준다.

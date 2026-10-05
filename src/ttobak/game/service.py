@@ -23,6 +23,7 @@ from ttobak.game.hard import (
 )
 from ttobak.game.rounds import Puzzle, puzzle_for_round
 from ttobak.game.rules import Mark, keyboard_state, score_guess
+from ttobak.game.sealed import seal
 from ttobak.game.share import build_share_text
 from ttobak.hangul import BASIC_JAMOS, decompose
 from ttobak.words import Lexicon
@@ -91,6 +92,9 @@ class GameView:
     difficulty: str = "normal"
     #: 앞으로 더 받을 수 있는 힌트 수.
     hints_left: int = 0
+    #: 진행 중인 판의 정답을 감춘 것. 화면이 그 자리에서 채점하는 데 쓴다
+    #: (``game/sealed.py``). 끝난 판에는 없다 — 그때는 ``answer`` 가 있다.
+    sealed: dict[str, str] | None = None
 
     @property
     def attempts_used(self) -> int:
@@ -646,6 +650,7 @@ class GameService:
                 not record.is_finished and record.hints_used < allowance
             ),
             hints_left=max(0, allowance - record.hints_used),
+            sealed=None if record.is_finished else seal("".join(answer_jamos)),
         )
 
     def _share_text(

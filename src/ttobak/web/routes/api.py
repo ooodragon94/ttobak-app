@@ -59,6 +59,7 @@ from ttobak.web.schemas import (
     JoinRequest,
     LeaderboardResponse,
     LeaderboardRow,
+    LexiconResponse,
     MeResponse,
     RecoveryResponse,
     SettingsRequest,
@@ -430,6 +431,21 @@ def update_settings(
         # 없으면 **지지도 못한 채 갇히는** 상태가 된다.
         service.apply_difficulty(player.id, today())
     return _settings_response(updated, settings, service)
+
+
+@router.get("/lexicon", response_model=LexiconResponse)
+def read_lexicon(service: ServiceDep, v: str = "") -> LexiconResponse:
+    """추측으로 받아 줄 자모 나열 전부. 화면이 사전 확인을 그 자리에서 한다.
+
+    로그인 없이 준다. 공개 사전에서 만든 목록이라 감출 것이 없고, 참가 전
+    화면에서도 미리 받아 둘 수 있어야 첫 판이 빠르다. 정답 목록(출제할
+    단어)은 따로 주지 않는다 — 허용 목록에 섞여 있어 어느 게 정답 후보인지
+    가려낼 수 없다.
+    """
+    lexicon = service.lexicon
+    if v == lexicon.version:
+        return LexiconResponse(version=lexicon.version, unchanged=True)
+    return LexiconResponse(version=lexicon.version, keys=lexicon.allowed_keys_text())
 
 
 @router.get("/support", response_model=SupportResponse)
