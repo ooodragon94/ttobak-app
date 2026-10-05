@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import os
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
@@ -101,6 +102,10 @@ def test_순서대로_보내면_정상이다(seeded: Database) -> None:
     assert record.status == "won"
 
 
+@pytest.mark.skipif(
+    os.environ.get("TTOBAK_TEST_FAKE_TURSO") == "1",
+    reason="원격(Turso)은 저장 방식을 서버가 정한다. WAL 은 로컬 파일 이야기다.",
+)
 def test_새로_만든_DB도_WAL_이다(tmp_path) -> None:
     """**이건 증상이 없는 종류의 회귀다.**
 

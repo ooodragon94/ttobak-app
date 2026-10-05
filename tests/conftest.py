@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -113,3 +114,31 @@ def detail_of(response) -> str:
     """
     detail = response.json()["detail"]
     return detail["message"] if isinstance(detail, dict) else detail
+
+
+@pytest.fixture(autouse=True)
+def _fake_turso(request, tmp_path: Path, monkeypatch):
+    """``TTOBAK_TEST_FAKE_TURSO=1`` 이면 모든 저장을 HTTP 어댑터 + 가짜 Turso 로 돌린다.
+
+    진짜 배포는 Turso 를 HTTP 로 부른다(``db/turso_http.py``). 평소 시험은 로컬
+    SQLite 로 빨리 돌고, 이 스위치를 켜면 **같은 시험 전부**가 그 HTTP 길을 지난다.
+    """
+    if os.environ.get("TTOBAK_TEST_FAKE_TURSO") != "1":
+        yield None
+        return
+    import httpx
+
+    from fake_turso import FakeTurso
+    from ttobak.db import turso_http
+
+    fake = FakeTurso(tmp_path / "test.sqlite3")
+    real_client = httpx.Client
+
+    def client(**kwargs):
+        kwargs["transport"] = httpx.MockTransport(fake.handle)
+        return real_client(**kwargs)
+
+    monkeypatch.setattr(turso_http, "_client_factory", client)
+    monkeypatch.setenv("TTOBAK_TURSO_URL", "libsql://fake.turso.local")
+    monkeypatch.setenv("TTOBAK_TURSO_TOKEN", "test")
+    yield fake

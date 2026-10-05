@@ -502,14 +502,12 @@ class Database:
         with self._idle_lock:
             if self._idle:
                 return self._idle.pop()
-        from ttobak.db import libsql_adapter
+        # libsql 패키지가 아니라 HTTP 로 부른다. libsql 은 원격 질의를 기다리는
+        # 동안 GIL 을 쥐어 스트림릿 서버 전체를 멈췄다(turso_http.py 첫머리).
+        # 외래 키는 쓰기 트랜잭션을 열 때 그 어댑터가 같은 요청에 실어 켠다.
+        from ttobak.db import turso_http
 
-        connection = libsql_adapter.connect(
-            str(self._path), url=self._turso_url, auth_token=self._turso_token
-        )
-        # Turso 는 처음부터 켜져 있지만(재 봤다), 기대는 대신 커넥션마다 한 번
-        # 확실히 켠다. 돌려 쓰므로 요청마다 드는 값이 아니다.
-        connection.execute("PRAGMA foreign_keys = ON")
+        connection = turso_http.connect(self._turso_url, self._turso_token)
         return connection  # type: ignore[return-value]
 
     def _give_back(self, connection: sqlite3.Connection) -> None:
