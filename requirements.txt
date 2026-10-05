@@ -3,8 +3,8 @@
 
 # 스트림릿 컴포넌트 v2(iframe 없이 페이지 안에서 도는 것)가 있어야 한다.
 streamlit==1.64.0
-# 기록을 Turso(원격 libSQL)에 둔다. 스트림릿 클라우드는 디스크가 남지 않는다.
-libsql==0.1.11
+# 기록은 Turso(원격 libSQL)에 두고 HTTP 로 부른다(db/turso_http.py, 위의 httpx).
+# libsql 패키지는 원격 질의를 기다리는 동안 GIL 을 쥐어 서버 전체를 멈춰서 뺐다.
 
 # 또박 서버 자체 (pyproject.toml 의 dependencies 와 같다)
 fastapi==0.141.1
@@ -16,5 +16,3 @@ itsdangerous>=2.2
 httpx==0.28.1
 # 리눅스 이미지에 시간대 자료가 없을 수 있다. 하루가 한국 시간으로 바뀌어야 한다.
 tzdata>=2024.1
-
-# 2026-10-05: 앱이 멈춰 의존성 목록을 건드려 재시작시킴(클라우드는 이 파일이 바뀌면 다시 설치하고 재시작한다)
