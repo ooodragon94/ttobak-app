@@ -82,3 +82,4 @@
 
 # --- 신고 반영 2026-10-05 (tools/review_reports.py) ---
 도륙
+교반

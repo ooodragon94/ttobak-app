@@ -188,3 +188,6 @@
 
 # --- 신고 반영 2026-09-18 (tools/review_reports.py) ---
 호명
+
+# --- 신고 반영 2026-10-05 (tools/review_reports.py) ---
+난무
