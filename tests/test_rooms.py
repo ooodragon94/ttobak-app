@@ -224,7 +224,7 @@ def test_이상한_코드는_DB까지_가지_않는다(jio, bad: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_같은_방_사람은_같은_문제를_푼다(jio, minsu, settings, lex) -> None:
+def test_같은_방_사람은_같은_문제를_푼다(jio, minsu) -> None:
     """**이 기능의 존재 이유다.**
 
     사람마다 다른 문제를 풀면 시도 횟수를 비교할 수도, 풀이를 보여 줄 수도,
@@ -239,7 +239,7 @@ def test_같은_방_사람은_같은_문제를_푼다(jio, minsu, settings, lex)
     assert mine["play_date"] == theirs["play_date"]
 
 
-def test_다른_방은_다른_문제다(jio, settings, lex) -> None:
+def test_다른_방은_다른_문제다(jio, settings) -> None:
     """한 방에서 답을 알아냈다고 다른 방까지 뚫리면 안 된다."""
     from ttobak.db import Database
 

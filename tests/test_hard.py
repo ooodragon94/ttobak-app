@@ -340,7 +340,7 @@ def test_끝난_판은_난이도가_안_바뀐다(client, settings) -> None:
     )
 
 
-def test_보통이_아니면_힌트를_못_쓴다(client, settings) -> None:
+def test_보통이_아니면_힌트를_못_쓴다(client) -> None:
     """난이도의 값어치는 "아무 도움 없이 풀었다" 는 데 있다.
 
     힌트를 허용하면 공유 문구의 표시가 의미를 잃는다.

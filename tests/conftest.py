@@ -117,7 +117,7 @@ def detail_of(response) -> str:
 
 
 @pytest.fixture(autouse=True)
-def _fake_turso(request, tmp_path: Path, monkeypatch):
+def _fake_turso(tmp_path: Path, monkeypatch):
     """``TTOBAK_TEST_FAKE_TURSO=1`` 이면 모든 저장을 HTTP 어댑터 + 가짜 Turso 로 돌린다.
 
     진짜 배포는 Turso 를 HTTP 로 부른다(``db/turso_http.py``). 평소 시험은 로컬

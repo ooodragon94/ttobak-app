@@ -128,7 +128,7 @@ def test_맞히면_다음_문제로_넘어간다(client: TestClient, settings: S
     assert game["rows"] == []
 
 
-def test_다음_문제는_직전_정답과_다르다(client: TestClient, settings: Settings, lex):
+def test_다음_문제는_직전_정답과_다르다(settings: Settings, lex):
     first = answer_for(settings, lex, "민수", 0)
     second = answer_for(settings, lex, "민수", 1)
     assert first != second
@@ -401,7 +401,7 @@ def test_화면에_코드를_받을_자리가_있다() -> None:
     assert "me?.recovery_code" in app, "받은 코드를 반드시 보여 줘야 한다"
 
 
-def test_한_번도_안_치고_포기해도_판이_보인다(client, settings) -> None:
+def test_한_번도_안_치고_포기해도_판이_보인다(client) -> None:
     """**실제로 사람을 가둔 사고다.**
 
     한 글자도 안 치고 포기하면 공유할 격자가 없다. 그때 공유 문구를 만드는

@@ -171,7 +171,7 @@ def test_다음_판부터_적용된다(client: TestClient, settings: Settings) -
 # 그냥 접는 사람은 셀 수도 없다.
 
 
-def test_손으로_추가한_말이_실제로_통과한다(settings: Settings) -> None:
+def test_손으로_추가한_말이_실제로_통과한다() -> None:
     """``data/extra-allowed.txt`` 에 적었는데 안 먹으면 적은 뜻이 없다.
 
     시험용 사전이 아니라 **실제 배포 사전**을 읽는다. 여기서만큼은 진짜

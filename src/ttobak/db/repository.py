@@ -69,6 +69,35 @@ def _carry_over_hard_mode(
     )
 
 
+#: 표가 처음 생긴 뒤에 더한 컬럼들. ``_migrate`` 가 없는 것만 순서대로 붙인다.
+#: (표, 컬럼, 정의)
+_ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
+    # 이 판의 난이도. **판마다 박아 둬야** 다 풀고 나서 설정을 올려 "불닭모드로
+    # 풀었다" 고 자랑하는 것을 막는다. NULL 이 기본 난이도다 — 문자열 기본값을
+    # 넣으면 난이도 이름을 바꿨을 때 옛 행에 죽은 값이 남는다.
+    ("games", "difficulty", "TEXT"),
+    # **판 시작 시점의 시도 횟수.** 설정을 바꿨다고 풀던 판의 규칙이 바뀌면
+    # 안 된다 — 줄이면 그 자리에서 패배가 된다. NULL 은 옛 판(서버 기본값).
+    ("games", "max_attempts", "INTEGER"),
+    ("games", "hints_used", "INTEGER NOT NULL DEFAULT 0"),
+    # 닉네임 선점용. 기존 계정은 NULL 로 남고, 다음에 그 닉네임으로 들어오는
+    # 사람이 임자가 되며 그때 코드를 받는다.
+    ("players", "recovery_hash", "TEXT"),
+    ("players", "hints_enabled", "INTEGER NOT NULL DEFAULT 0"),
+    # 풀고 싶은 자모 길이(JSON 배열). **NULL 이 "서버 기본값 전부"** 다 — 빈
+    # 배열이면 낼 문제가 없어 게임이 멈추므로 둘을 구분한다.
+    ("players", "puzzle_lengths", "TEXT"),
+    # 기본 1 = 켜짐. 마이그레이션이 조용히 기능을 꺼 버리면 안 된다.
+    ("rooms", "support_enabled", "INTEGER NOT NULL DEFAULT 1"),
+    ("players", "difficulty", "TEXT"),
+    # 이 사람이 쓸 시도 횟수. NULL 이면 서버 기본값.
+    ("players", "max_attempts", "INTEGER"),
+    # 방 주인과 어떤 사이인지. 선택 입력이라 빈 문자열이 기본이다.
+    ("players", "relation", "TEXT NOT NULL DEFAULT ''"),
+    ("players", "share_theme", "TEXT NOT NULL DEFAULT 'classic'"),
+)
+
+
 @dataclass(frozen=True)
 class Player:
     id: str
@@ -333,48 +362,15 @@ class Database:
             rows = connection.execute(f"PRAGMA table_info({table})").fetchall()
             return {row["name"] for row in rows}
 
-        game_columns = columns_of("games")
-        if "difficulty" not in game_columns:
-            # 이 판의 난이도. **판마다 박아 둬야** 다 풀고 나서 설정을 올려
-            # "불닭모드로 풀었다" 고 자랑하는 것을 막는다.
-            #
-            # NULL 이 기본 난이도를 뜻한다. 문자열 기본값을 넣지 않는 이유는
-            # 난이도 이름을 나중에 바꾸면 옛 행에 죽은 값이 남기 때문이다.
-            connection.execute("ALTER TABLE games ADD COLUMN difficulty TEXT")
-            _carry_over_hard_mode(connection, "games", game_columns)
-        if "max_attempts" not in game_columns:
-            # **판 시작 시점의 시도 횟수를 박아 둔다.**
-            #
-            # 정답을 스냅숏하는 것과 같은 이유다. 설정을 바꿨다고 풀던 판의
-            # 규칙이 바뀌면 안 된다 — 특히 줄이면 그 자리에서 패배가 된다.
-            # NULL 은 이 컬럼이 생기기 전의 옛 판이라 서버 기본값으로 본다.
-            connection.execute("ALTER TABLE games ADD COLUMN max_attempts INTEGER")
-        if "hints_used" not in game_columns:
-            connection.execute(
-                "ALTER TABLE games ADD COLUMN hints_used INTEGER NOT NULL DEFAULT 0"
-            )
-        player_columns = columns_of("players")
-        if "recovery_hash" not in player_columns:
-            # 닉네임 선점용. 비밀번호 없이도 "먼저 쓴 사람이 임자" 를 만든다.
-            #
-            # 기존 계정은 NULL 로 남는다. 그 계정들은 다음에 그 닉네임으로
-            # 들어오는 사람이 임자가 되고 그때 코드를 받는다. 지금 쓰는
-            # 사람이 대개 본인이라 실질적 위험은 낮지만, 완전히 깨끗하게
-            # 가려면 공개 전에 players 표를 비우면 된다.
-            connection.execute("ALTER TABLE players ADD COLUMN recovery_hash TEXT")
-        if "hints_enabled" not in player_columns:
-            connection.execute(
-                "ALTER TABLE players ADD COLUMN hints_enabled"
-                " INTEGER NOT NULL DEFAULT 0"
-            )
-        if "puzzle_lengths" not in player_columns:
-            # 이 사람이 풀고 싶은 자모 길이. JSON 배열 문자열이다.
-            #
-            # **NULL 이 "서버 기본값 전부" 를 뜻한다.** 빈 배열과 구분해야
-            # 하는데, 빈 배열이면 낼 문제가 없어 게임이 멈춘다. NULL 을
-            # 기본으로 두면 설정을 건드린 적 없는 사람은 지금까지와 똑같이
-            # 동작한다.
-            connection.execute("ALTER TABLE players ADD COLUMN puzzle_lengths TEXT")
+        # 컬럼을 더하기 **전**의 이름들. 옛 hard_mode 를 옮길 때 이것을 본다.
+        before = {table: columns_of(table) for table in ("games", "players", "rooms")}
+        for table, column, definition in _ADDED_COLUMNS:
+            if column in before[table]:
+                continue
+            connection.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+            if column == "difficulty":
+                _carry_over_hard_mode(connection, table, before[table])
+
         if "slot" not in columns_of("daily_games"):
             # **기본키가 바뀐다.** SQLite 는 기본키를 고칠 수 없어서 표를
             # 새로 만들고 옮기는 수밖에 없다. 옛 판은 전부 1번 문제(slot 0)로
@@ -406,32 +402,6 @@ class Database:
                 CREATE INDEX IF NOT EXISTS idx_daily_room_date
                     ON daily_games (room_id, play_date, status);
                 """
-            )
-
-        room_columns = columns_of("rooms")
-        if "support_enabled" not in room_columns:
-            # 기본 1 = 켜짐. 이미 있는 방들도 지금까지와 똑같이 동작한다 —
-            # 마이그레이션이 조용히 기능을 꺼 버리면 안 된다.
-            connection.execute(
-                "ALTER TABLE rooms ADD COLUMN support_enabled"
-                " INTEGER NOT NULL DEFAULT 1"
-            )
-        if "difficulty" not in player_columns:
-            connection.execute("ALTER TABLE players ADD COLUMN difficulty TEXT")
-            _carry_over_hard_mode(connection, "players", player_columns)
-        if "max_attempts" not in player_columns:
-            # 이 사람이 쓸 시도 횟수. NULL 이면 서버 기본값을 쓴다.
-            connection.execute("ALTER TABLE players ADD COLUMN max_attempts INTEGER")
-        if "relation" not in player_columns:
-            # 방 주인과 어떤 사이인지. 선택 입력이라 빈 문자열이 기본이다.
-            connection.execute(
-                "ALTER TABLE players ADD COLUMN relation"
-                " TEXT NOT NULL DEFAULT ''"
-            )
-        if "share_theme" not in player_columns:
-            connection.execute(
-                "ALTER TABLE players ADD COLUMN share_theme"
-                " TEXT NOT NULL DEFAULT 'classic'"
             )
 
     @contextmanager
@@ -507,8 +477,7 @@ class Database:
         # 외래 키는 쓰기 트랜잭션을 열 때 그 어댑터가 같은 요청에 실어 켠다.
         from ttobak.db import turso_http
 
-        connection = turso_http.connect(self._turso_url, self._turso_token)
-        return connection  # type: ignore[return-value]
+        return turso_http.connect(self._turso_url, self._turso_token)  # type: ignore[return-value]
 
     def _give_back(self, connection: sqlite3.Connection) -> None:
         with self._idle_lock:
@@ -663,8 +632,10 @@ class Database:
 
         with self.connect() as connection:
             if assignments:
+                # 조립하는 것은 위에서 고른 "열 = ?" 고정 문자열뿐이고 값은 전부
+                # 자리표시자로 넘긴다. 사용자 입력이 SQL 에 섞이지 않는다.
                 connection.execute(
-                    f"UPDATE players SET {', '.join(assignments)} WHERE id = ?",
+                    f"UPDATE players SET {', '.join(assignments)} WHERE id = ?",  # noqa: S608
                     (*values, player_id),
                 )
             row = connection.execute(
@@ -1338,35 +1309,29 @@ class Database:
         if expect_attempts is not None:
             tail = (*tail, expect_attempts)
 
+        # 힌트를 쓴 수는 줄 때만 고친다. 조립하는 것은 고정 문자열 조각뿐이고
+        # 값은 전부 자리표시자로 넘긴다.
+        hints_set = "" if hints_used is None else " hints_used = ?,"
+        sql = (
+            "UPDATE daily_games SET guesses = ?, status = ?,"  # noqa: S608
+            + hints_set
+            + " finished_at = COALESCE(?, finished_at)"
+            " WHERE room_id = ? AND play_date = ? AND slot = ?"
+            " AND player_id = ?"
+            + guard
+        )
+        hints_value = () if hints_used is None else (hints_used,)
         with self.connect() as connection:
-            if hints_used is None:
-                cursor = connection.execute(
-                    "UPDATE daily_games SET guesses = ?, status = ?,"
-                    "       finished_at = COALESCE(?, finished_at)"
-                    " WHERE room_id = ? AND play_date = ? AND slot = ?"
-                    "   AND player_id = ?" + guard,
-                    (
-                        json.dumps(list(guesses), ensure_ascii=False),
-                        status,
-                        finished_at,
-                        *tail,
-                    ),
-                )
-            else:
-                cursor = connection.execute(
-                    "UPDATE daily_games SET guesses = ?, status = ?,"
-                    "       hints_used = ?,"
-                    "       finished_at = COALESCE(?, finished_at)"
-                    " WHERE room_id = ? AND play_date = ? AND slot = ?"
-                    "   AND player_id = ?" + guard,
-                    (
-                        json.dumps(list(guesses), ensure_ascii=False),
-                        status,
-                        hints_used,
-                        finished_at,
-                        *tail,
-                    ),
-                )
+            cursor = connection.execute(
+                sql,
+                (
+                    json.dumps(list(guesses), ensure_ascii=False),
+                    status,
+                    *hints_value,
+                    finished_at,
+                    *tail,
+                ),
+            )
             if expect_attempts is not None and cursor.rowcount == 0:
                 return None
             row = connection.execute(

@@ -349,22 +349,30 @@ class BodySizeLimitMiddleware:
         self._app = app
         self._max_bytes = max_bytes
 
+    def _refuse_by_header(self, scope) -> tuple[int, str] | None:
+        """``Content-Length`` 만 보고 거절할지. 거절이면 (상태, 문구).
+
+        헤더가 있으면 본문을 한 바이트도 읽기 전에 끊을 수 있다. 제일 싸다.
+        """
+        headers = {k.decode("latin-1").lower(): v for k, v in scope.get("headers", [])}
+        declared = headers.get("content-length")
+        if declared is None:
+            return None
+        try:
+            size = int(declared)
+        except ValueError:
+            return 400, "잘못된 요청 헤더입니다."
+        return (413, "요청이 너무 큽니다.") if size > self._max_bytes else None
+
     async def __call__(self, scope, receive, send) -> None:
         if scope["type"] != "http":
             await self._app(scope, receive, send)
             return
 
-        headers = {k.decode("latin-1").lower(): v for k, v in scope.get("headers", [])}
-        declared = headers.get("content-length")
-        if declared is not None:
-            # 헤더가 있으면 본문을 한 바이트도 읽기 전에 끊을 수 있다. 제일 싸다.
-            try:
-                if int(declared) > self._max_bytes:
-                    await _send_json(send, 413, "요청이 너무 큽니다.")
-                    return
-            except ValueError:
-                await _send_json(send, 400, "잘못된 요청 헤더입니다.")
-                return
+        refused = self._refuse_by_header(scope)
+        if refused is not None:
+            await _send_json(send, *refused)
+            return
 
         received = 0
         too_large = False

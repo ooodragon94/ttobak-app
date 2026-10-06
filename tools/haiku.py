@@ -53,7 +53,7 @@ def ask(prompt: str, *, model: str = "haiku", timeout: int = 300) -> str:
     """
     flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
     try:
-        proc = subprocess.run(
+        proc = subprocess.run(  # noqa: S603 - 고정 명령(claude), 셸 없음
             # MCP 연결(메일·캘린더 같은 것)은 안 띄운다. 낱말 고르기에는 필요 없고,
             # 몇백 번 부르는 일이라 매번 붙는 시간이 쌓인다.
             [_claude_exe(), "-p", "--model", model, "--strict-mcp-config"],

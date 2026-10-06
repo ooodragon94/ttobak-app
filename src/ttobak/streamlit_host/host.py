@@ -55,7 +55,9 @@ def _secrets() -> dict[str, str]:
     """
     try:
         items = dict(st.secrets)
-    except Exception:
+    # 비밀값 파일이 없을 때 스트림릿이 던지는 예외는 판마다 이름이 다르다.
+    # 여기서 앱이 죽으면 화면이 아예 안 뜨므로 무엇이든 "비밀값 없음" 으로 본다.
+    except Exception:  # noqa: BLE001
         return {}
     return {k: str(v) for k, v in items.items() if k.startswith("TTOBAK_")}
 
@@ -97,7 +99,8 @@ def _code_version() -> str:
 
 @st.cache_resource(show_spinner=False, max_entries=2)
 def _backend_for(
-    fingerprint: str, _values: dict[str, str]
+    fingerprint: str,  # noqa: ARG001 - 안 읽지만 스트림릿 캐시 열쇠다(밑줄 붙이면 빠진다)
+    _values: dict[str, str],
 ) -> tuple[Any, Any, dict[str, Any]]:
     """앱과 화면 조각을 비밀값 묶음마다 **한 번만** 만든다.
 

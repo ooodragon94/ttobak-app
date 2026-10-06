@@ -232,8 +232,11 @@ def join_room(
             )
         database.join_room(room_id, player.id)
 
+    # 방금 확인한 방이 그새 지워졌을 수 있다(방장이 지움). assert 는 최적화
+    # 실행(-O)에서 사라지므로 실제 검사로 둔다.
     refreshed = database.get_room(room_id)
-    assert refreshed is not None
+    if refreshed is None:
+        raise HTTPException(status_code=404, detail="방을 찾을 수 없어요.")
     return _room_row(refreshed, player)
 
 

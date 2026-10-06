@@ -54,10 +54,9 @@ class FakeTurso:
         self.requests = 0
 
     def _open(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(
+        return sqlite3.connect(
             self.path, timeout=5.0, isolation_level=None, check_same_thread=False
         )
-        return conn
 
     def handle(self, request: httpx.Request) -> httpx.Response:
         self.requests += 1

@@ -61,7 +61,9 @@ def _seeded_shuffle(items: list, *seed_parts: object) -> list:
     """
     digest = hashlib.sha256("|".join(map(str, seed_parts)).encode("utf-8")).digest()
     shuffled = list(items)
-    random.Random(digest).shuffle(shuffled)
+    # 암호용이 아니라 "같은 시드면 같은 순서" 가 필요한 섞기다. 정답을 못 맞히게
+    # 하는 것은 시드에 든 비밀 salt 가 맡는다.
+    random.Random(digest).shuffle(shuffled)  # noqa: S311
     return shuffled
 
 

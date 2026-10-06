@@ -142,22 +142,7 @@ def check_difficulty(
     if not difficulty.restricted or not previous:
         return
 
-    # 초록으로 확정된 자리들.
-    fixed: dict[int, str] = {}
-    # 지금까지 확인된 "이 자모가 최소 몇 개는 있다".
-    required: dict[str, int] = {}
-
-    for past in previous:
-        marks = score_guess(past, answer)
-        counts: dict[str, int] = {}
-        for index, (jamo, mark) in enumerate(zip(past, marks, strict=True)):
-            if mark is Mark.CORRECT:
-                fixed[index] = jamo
-            if mark in (Mark.CORRECT, Mark.PRESENT):
-                counts[jamo] = counts.get(jamo, 0) + 1
-        # 여러 줄에 걸쳐 얻은 정보는 **가장 많이 본 쪽**이 맞다.
-        for jamo, count in counts.items():
-            required[jamo] = max(required.get(jamo, 0), count)
+    fixed, required = _revealed(previous, answer)
 
     if difficulty.keep_correct:
         for index, jamo in sorted(fixed.items()):
@@ -171,6 +156,29 @@ def check_difficulty(
             if guess.count(jamo) < count:
                 more = "" if count == 1 else f" {count}개"
                 raise HardModeError(f"'{jamo}'{more}를 꼭 넣어야 해요.")
+
+
+def _revealed(
+    previous: list[tuple[str, ...]], answer: tuple[str, ...]
+) -> tuple[dict[int, str], dict[str, int]]:
+    """지금까지의 추측으로 밝혀진 단서.
+
+    :returns: (초록으로 확정된 자리 → 자모, 자모 → 최소 몇 개는 있다)
+    """
+    fixed: dict[int, str] = {}
+    required: dict[str, int] = {}
+    for past in previous:
+        marks = score_guess(past, answer)
+        counts: dict[str, int] = {}
+        for index, (jamo, mark) in enumerate(zip(past, marks, strict=True)):
+            if mark is Mark.CORRECT:
+                fixed[index] = jamo
+            if mark in (Mark.CORRECT, Mark.PRESENT):
+                counts[jamo] = counts.get(jamo, 0) + 1
+        # 여러 줄에 걸쳐 얻은 정보는 **가장 많이 본 쪽**이 맞다.
+        for jamo, count in counts.items():
+            required[jamo] = max(required.get(jamo, 0), count)
+    return fixed, required
 
 
 def relaxes(new: Difficulty, old: Difficulty) -> bool:

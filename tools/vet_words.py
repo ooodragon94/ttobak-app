@@ -541,9 +541,11 @@ def rescue(length: int, model: str) -> int:
     candidates: list[str] = []
     for piece in pieces:
         kept = set(read_lines(piece.with_suffix(".keep")))
-        for word in read_lines(piece):
-            if word not in kept and word in common and not is_verb_form(word):
-                candidates.append(word)
+        candidates.extend(
+            word
+            for word in read_lines(piece)
+            if word not in kept and word in common and not is_verb_form(word)
+        )
     print(
         f"{length}자모: 빠졌지만 빈도표에 있는 말 {len(candidates)}개를"
         f" {model} 에게 다시 묻습니다.",

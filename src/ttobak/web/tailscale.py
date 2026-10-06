@@ -58,7 +58,9 @@ def whois(client_ip: str, *, cli: str = "tailscale") -> TailscaleIdentity | None
         return None
 
     try:
-        completed = subprocess.run(
+        # 실행 파일은 PATH 에서 찾은 tailscale 하나, 인자는 tailnet 주소로 확인된
+        # 값뿐이다(위에서 걸렀다). 셸을 거치지 않는다.
+        completed = subprocess.run(  # noqa: S603
             [executable, "whois", client_ip],
             capture_output=True,
             text=True,

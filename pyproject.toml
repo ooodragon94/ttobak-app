@@ -43,11 +43,29 @@ target-version = "py311"
 src = ["src", "tests", "scripts"]
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "SIM", "N"]
+# 기본(E F I UP B SIM N)에 더해 "AI 가 만든 티가 나는 코드" 를 잡는 규칙들.
+# 2026-10-06 사장님 승인(A안): 쓸모없어진 noqa, 안 쓰는 인자, 군더더기 return,
+# 느린 반복, 아무 오류나 삼키기, 너무 복잡한 함수, 보안, print.
+select = [
+    "E", "F", "I", "UP", "B", "SIM", "N",
+    "RUF100", "ARG", "RET", "PERF", "BLE", "C90", "S", "T20",
+]
+
+[tool.ruff.lint.mccabe]
+# 분기가 이보다 많은 함수는 쪼갠다.
+max-complexity = 10
 
 [tool.ruff.lint.per-file-ignores]
 # 테스트 이름은 한글 문장으로 쓴다. 한글에는 대소문자가 없어 N802가 오탐한다.
-"tests/*" = ["N802"]
+# 테스트는 assert 가 본업이고(S101), 시험용 비밀값·주소·난수는 진짜가 아니다.
+"tests/*" = ["N802", "S101", "S104", "S106", "S311"]
+# 관리 도구와 스크립트는 화면에 찍는 것이 본업이고(T20), 명령줄 진입 함수는
+# 옵션마다 갈라지는 것이 자연스럽다(C901).
+"tools/*" = ["T20", "C901"]
+"scripts/*" = ["T20", "C901"]
+# 옮기는 도구는 표 이름을 DB 의 표 목록(sqlite_master)에서 읽어 SQL 에 넣는다.
+# 사람이 넣는 값이 아니다.
+"tools/copy_to_turso.py" = ["T20", "C901", "S608"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["ttobak"]

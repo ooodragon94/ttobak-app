@@ -125,12 +125,13 @@ def test_HTML_이_쓰는_class_에_규칙이_있다() -> None:
     for attr in re.findall(r'class="([^"]+)"', html):
         used.update(attr.split())
 
-    missing = []
-    for name in sorted(used):
-        # 클래스 하나만으로 시작하는 규칙이 있는가. 조상 선택자 안에만
-        # 있으면 다른 자리에서 못 쓴다 — 그게 이 시험이 잡으려는 것이다.
-        if not re.search(rf"(?m)^\.{re.escape(name)}[\s,:{{]", css):
-            missing.append(name)
+    # 클래스 하나만으로 시작하는 규칙이 있는가. 조상 선택자 안에만
+    # 있으면 다른 자리에서 못 쓴다 — 그게 이 시험이 잡으려는 것이다.
+    missing = [
+        name
+        for name in sorted(used)
+        if not re.search(rf"(?m)^\.{re.escape(name)}[\s,:{{]", css)
+    ]
 
     assert not missing, f"CSS 규칙이 없는 class: {missing}"
 
